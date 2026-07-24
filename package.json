@@ -1,0 +1,14 @@
+{
+  "name": "ideation-workbench-local",
+  "version": "0.3.4",
+  "private": true,
+  "type": "module",
+  "description": "A fully local, theme-scoped ideation and implementation conflict workbench.",
+  "scripts": {
+    "start": "node --no-warnings server/index.mjs",
+    "test": "node --test server/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

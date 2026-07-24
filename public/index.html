@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#eef2f7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0f1419" media="(prefers-color-scheme: dark)" />
+  <title>Ideation Workbench</title>
+  <script>
+    (function () {
+      try {
+        var pref = localStorage.getItem('iw-theme');
+        if (pref === 'light' || pref === 'dark') document.documentElement.setAttribute('data-theme', pref);
+        else document.documentElement.removeAttribute('data-theme');
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="/styles.css?v=0.3.4" />
+</head>
+<body>
+  <section id="project-gate" class="project-gate">
+    <div class="gate-card">
+      <div class="gate-tools">
+        <button class="color-mode-toggle" data-action="cycle-color-mode" type="button" title="Switch color theme" aria-label="Switch color theme"><span class="mode-glyph">◐</span></button>
+      </div>
+      <div class="brand-mark">IW</div>
+      <p class="eyebrow">Fully local personal tool</p>
+      <h1>Ideation Workbench</h1>
+      <p class="muted">Choose a portable project folder. It will contain one SQLite database, attachments, and timestamped backups.</p>
+      <label class="field">
+        <span>Project folder</span>
+        <div class="path-row">
+          <input id="project-path" type="text" placeholder="C:\Users\you\Documents\My Ideation Project" />
+          <button class="button secondary" data-action="browse-project">Browse…</button>
+        </div>
+      </label>
+      <label class="field">
+        <span>Project name <small>(used only when creating a new folder)</small></span>
+        <input id="project-name" type="text" placeholder="My Ideation Project" />
+      </label>
+      <button class="button primary wide" data-action="open-project">Open or create project</button>
+      <section id="included-projects" class="included-projects" hidden>
+        <div>
+          <strong>Included projects</strong>
+          <p class="tiny muted">Bundled under <code>/projects</code>. Opening one edits that local copy.</p>
+        </div>
+        <div class="path-row">
+          <select id="included-project-select" aria-label="Included project"></select>
+          <button class="button secondary" data-action="open-included-project">Open included</button>
+        </div>
+      </section>
+      <p id="gate-error" class="error-text" role="alert"></p>
+    </div>
+  </section>
+
+  <div id="app" class="app" hidden>
+    <header class="topbar">
+      <div class="brand-inline">
+        <div class="brand-mark small">IW</div>
+        <div>
+          <strong id="project-title">Ideation Workbench</strong>
+          <div id="project-location" class="tiny muted"></div>
+        </div>
+      </div>
+      <div class="theme-control">
+        <label class="theme-picker">
+          <span>Theme</span>
+          <select id="theme-select"></select>
+        </label>
+        <button class="button secondary compact" data-action="add-theme-quick" title="Create a theme">+ Theme</button>
+      </div>
+      <nav class="top-actions" aria-label="Main actions">
+        <button class="button primary" data-action="add-idea">+ Idea</button>
+        <button class="button primary" data-action="add-implementation">+ Implementation</button>
+        <button class="button secondary" data-action="manage-conflicts">Conflicts</button>
+        <button class="button secondary" data-action="manage-structure">Structure</button>
+        <button class="button secondary" data-action="manage-saves">Saved views</button>
+        <button class="button ghost" data-action="backup">Backup</button>
+        <button class="button ghost" data-action="project-menu">Project</button>
+        <button class="color-mode-toggle" data-action="cycle-color-mode" type="button" title="Switch color theme" aria-label="Switch color theme"><span class="mode-glyph">◐</span></button>
+      </nav>
+    </header>
+
+    <section class="filterbar">
+      <label class="search-box">
+        <span class="sr-only">Search</span>
+        <input id="search-input" type="search" placeholder="Search ideas and implementations…" />
+      </label>
+      <label class="compact-field">
+        <span>Idea group</span>
+        <select id="idea-group-filter"></select>
+      </label>
+      <button class="button ghost compact" data-action="show-all">Show all</button>
+      <button class="button ghost compact" data-action="hide-all">Hide all</button>
+      <button class="button ghost compact" data-action="restore-visible">Restore previous</button>
+      <label class="toggle-label"><input id="show-excluded" type="checkbox" checked /> Show excluded</label>
+      <div class="lock-summary"><strong id="lock-count">0 locked</strong><button class="link-button" data-action="clear-locks">Clear</button></div>
+    </section>
+
+    <div class="workspace">
+      <main class="board-wrap">
+        <div id="conflict-focus-banner" class="focus-banner" hidden></div>
+        <div id="board" class="board" aria-live="polite"></div>
+      </main>
+      <aside id="inspector" class="inspector"></aside>
+    </div>
+
+    <footer class="statusbar">
+      <span id="save-status">Ready</span>
+      <span id="project-stats"></span>
+    </footer>
+  </div>
+
+  <dialog id="modal" class="modal">
+    <div class="modal-frame">
+      <header class="modal-header">
+        <h2 id="modal-title"></h2>
+        <button class="icon-button" aria-label="Close" data-action="close-modal">×</button>
+      </header>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+  <script type="module" src="/app.js?v=0.3.4"></script>
+</body>
+</html>
