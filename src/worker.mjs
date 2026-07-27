@@ -6,6 +6,7 @@ const json = (payload, status = 200) => new Response(JSON.stringify(payload), { 
 const error = (message, status = 400) => json({ error: message }, status);
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
+const shareSlug = (name) => `${String(name || 'project').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 72) || 'project'}-${id().replaceAll('-', '').slice(0, 12)}`;
 
 function defaultState(name = 'My Ideation Project') {
   const themeId = id();
@@ -87,6 +88,18 @@ function attachmentResponse(object, request) {
   return new Response(object.body, { headers });
 }
 
+async function publicSharePage(request, env, url) {
+  if (request.method !== 'GET' || !/^\/[a-z0-9][a-z0-9-]*$/i.test(url.pathname)) return null;
+  const slug = decodeURIComponent(url.pathname.slice(1));
+  const share = await env.DB.prepare('SELECT id FROM project_shares WHERE slug = ?').bind(slug).first();
+  if (!share) return null;
+  const asset = await env.ASSETS.fetch(new Request(new URL('/share.html', url).toString()));
+  const headers = new Headers(asset.headers);
+  headers.set('cache-control', 'no-store');
+  headers.set('x-robots-tag', 'noindex, nofollow, noarchive');
+  return new Response(asset.body, { status: asset.status, headers });
+}
+
 async function api(request, env, url) {
   if (request.method === 'GET' && url.pathname === '/api/config') return json({ clerkPublishableKey: env.CLERK_PUBLISHABLE_KEY || '', appOrigin: env.APP_ORIGIN });
   if (request.method === 'POST' && url.pathname === '/api/webhooks/clerk') return handleWebhook(request, env);
@@ -98,6 +111,15 @@ async function api(request, env, url) {
     const project = await currentProject(env, userId);
     return json({ authenticated: true, provisioned: true, open: true, path: 'Private cloud workspace', projectId: project.id, state: JSON.parse(project.state_json) });
   }
+  if (request.method === 'GET' && url.pathname.startsWith('/api/public-shares/')) {
+    const slug = decodeURIComponent(url.pathname.slice('/api/public-shares/'.length));
+    const share = await env.DB.prepare('SELECT shares.mode, shares.snapshot_state_json, projects.state_json FROM project_shares shares JOIN projects ON projects.id = shares.project_id WHERE shares.slug = ?').bind(slug).first();
+    if (!share) return error('Shared project not found.', 404);
+    const state = JSON.parse(share.mode === 'snapshot' ? share.snapshot_state_json : share.state_json);
+    const response = json({ mode: share.mode, state });
+    const headers = new Headers(response.headers); headers.set('x-robots-tag', 'noindex, nofollow, noarchive');
+    return new Response(response.body, { status: response.status, headers });
+  }
   const workspace = await requireWorkspace(request, env);
   if (workspace.response) return workspace.response;
   const project = await currentProject(env, workspace.userId);
@@ -108,6 +130,22 @@ async function api(request, env, url) {
     state.meta ||= {}; state.meta.updatedAt = now(); state.meta.name = String(state.meta.name || project.name).slice(0, 160);
     await env.DB.prepare('UPDATE projects SET name = ?, state_json = ?, updated_at = ? WHERE id = ? AND owner_id = ?').bind(state.meta.name, JSON.stringify(state), state.meta.updatedAt, project.id, workspace.userId).run();
     return json(state);
+  }
+  if (request.method === 'POST' && url.pathname === '/api/shares') {
+    const body = await request.json().catch(() => null);
+    const mode = body?.mode;
+    if (mode !== 'live' && mode !== 'snapshot') return error('Choose a live or snapshot share.');
+    let slug = ''; let created = false;
+    for (let attempt = 0; attempt < 3 && !created; attempt += 1) {
+      slug = shareSlug(project.name);
+      try {
+        await env.DB.prepare('INSERT INTO project_shares (id, project_id, owner_id, slug, mode, snapshot_state_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(id(), project.id, workspace.userId, slug, mode, mode === 'snapshot' ? project.state_json : null, now()).run();
+        created = true;
+      } catch (cause) {
+        if (attempt === 2) throw cause;
+      }
+    }
+    return json({ slug, mode, url: `${env.APP_ORIGIN}/${slug}` }, 201);
   }
   if (request.method === 'POST' && url.pathname === '/api/attachments') {
     const filename = String(url.searchParams.get('filename') || 'attachment.bin').replace(/[^a-zA-Z0-9._ -]/g, '_').slice(0, 180);
@@ -136,5 +174,7 @@ export default { async fetch(request, env) {
   }
   if (request.method === 'OPTIONS') return new Response(null, { status: 204 });
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/attachments/')) return securityHeaders(await api(request, env, url));
+  const shared = await publicSharePage(request, env, url);
+  if (shared) return securityHeaders(shared);
   return securityHeaders(await env.ASSETS.fetch(request));
 } };

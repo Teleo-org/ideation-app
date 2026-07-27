@@ -9,7 +9,7 @@ import {
 } from './core.mjs';
 import { modeGlyph, modeLabel, nextMode, normalizeMode, resolveThemeMode } from './theme-mode.mjs';
 import { generateExportMarkdown, stripBoldFromState, parseImportMarkdown } from './export.mjs';
-import { downloadProjectZip, exportProjectDirectory, importProjectDirectory, importProjectFile, projectDocument } from './portable.mjs';
+import { downloadProjectZip, exportProjectDirectory, importProjectDirectory, importProjectFile } from './portable.mjs';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -622,7 +622,11 @@ function openProjectMenu() {
 }
 
 function openShareMenu() {
-  modalManager('Share project', `<p>Share a complete portable copy of this project. Recipients can import the file into Ideation Workbench.</p><p class="muted">Sharing a copy does not give access to your private cloud workspace.</p><div class="manager-list"><button class="button primary" data-action="share-project-file">Share project file</button><button class="button secondary" data-action="download-share-project-file">Download project file</button><button class="button ghost" data-action="project-menu">Back</button></div>`);
+  if (storageMode !== 'cloud') {
+    modalManager('Share project', `<p>Public links are available after this project has been saved to your private cloud workspace.</p><p class="muted">Sign in and save this browser project first, then return here to create a permanent read-only link.</p><div class="manager-list"><button class="button ghost" data-action="project-menu">Back</button></div>`);
+    return;
+  }
+  modalManager('Share project', `<p>Create a permanent, read-only link. The link is marked not to be indexed by search engines.</p><div class="manager-list"><button class="button primary" data-action="create-project-share" data-share-mode="live">Create live link</button><p class="tiny muted">Readers see future changes as you save them.</p><button class="button secondary" data-action="create-project-share" data-share-mode="snapshot">Create snapshot link</button><p class="tiny muted">Readers see exactly the project as it is now.</p><button class="button ghost" data-action="project-menu">Back</button></div>`);
 }
 
 function openExportMenu() {
@@ -642,32 +646,20 @@ function openSignOutMenu(removeBrowserCopy) {
   modalManager('Confirm sign out', `<p>${detail}</p><div class="form-actions"><button class="button ghost" data-action="open-sign-out-menu">Back</button><button class="button danger" data-action="confirm-sign-out" data-remove-browser-copy="${removeBrowserCopy}">Sign out</button></div>`);
 }
 
-function projectShareFile() {
-  const content = JSON.stringify(projectDocument(state), null, 2);
-  return new File([content], `${state.meta.name.replace(/[^a-zA-Z0-9 _-]/g, '_') || 'ideation-project'}.ideation.json`, { type: 'application/json' });
-}
-
-function downloadShareProjectFile() {
-  const file = projectShareFile();
-  const url = URL.createObjectURL(file);
-  const link = document.createElement('a');
-  link.href = url; link.download = file.name; link.click();
-  URL.revokeObjectURL(url);
-}
-
-async function shareProjectFile() {
-  const file = projectShareFile();
-  if (!navigator.share || !navigator.canShare?.({ files: [file] })) {
-    downloadShareProjectFile();
-    showToast('Project file downloaded. Send it to the person you want to share with.');
-    return;
-  }
+async function createProjectShare(mode) {
   try {
-    await navigator.share({ title: state.meta.name, text: 'Ideation Workbench project', files: [file] });
-    showToast('Project shared.');
-  } catch (error) {
-    if (error?.name !== 'AbortError') showToast(`Could not share the project: ${error.message}`);
-  }
+    await saveState();
+    const share = await api('/api/shares', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) });
+    modalManager('Share link created', `<p>This permanent ${share.mode === 'live' ? 'live' : 'snapshot'} link is read-only and marked not to be indexed.</p><label class="field"><span>Share link</span><input id="share-link" value="${escapeHtml(share.url)}" readonly /></label><div class="form-actions"><button class="button ghost" data-action="project-menu">Done</button><button class="button primary" data-action="copy-share-link">Copy link</button></div>`);
+  } catch (error) { showToast(`Could not create the share link: ${error.message}`); }
+}
+
+async function copyShareLink() {
+  const input = $('#share-link');
+  if (!input) return;
+  input.select();
+  try { await navigator.clipboard.writeText(input.value); showToast('Share link copied.'); }
+  catch { document.execCommand('copy'); showToast('Share link selected—copy it from the field.'); }
 }
 
 function signOutAndReturnToBrowser({ removeBrowserCopy = false } = {}) {
@@ -1146,8 +1138,8 @@ function handleAction(target) {
   else if (action === 'load-view') loadSavedView(itemId);
   else if (action === 'delete-view') { state.savedViews = state.savedViews.filter((item) => item.id !== itemId); markDirty(); openSavesManager(); }
   else if (action === 'open-share-menu') openShareMenu();
-  else if (action === 'share-project-file') shareProjectFile();
-  else if (action === 'download-share-project-file') { downloadShareProjectFile(); showToast('Shareable project file downloaded.'); }
+  else if (action === 'create-project-share') createProjectShare(target.dataset.shareMode);
+  else if (action === 'copy-share-link') copyShareLink();
   else if (action === 'open-export-menu') openExportMenu();
   else if (action === 'open-import-menu') openImportMenu();
   else if (action === 'export-project-zip') {
