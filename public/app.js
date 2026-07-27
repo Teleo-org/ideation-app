@@ -362,7 +362,6 @@ function implementationBadges(implementation, blockers, conflicts, directInTheme
   const outgoing = requirements().filter((requirement) => requirement.fromImplementationId === implementation.id);
   const incoming = requirements().filter((requirement) => requirement.toImplementationId === implementation.id);
   if (!directInTheme) badges.push(`<span class="micro-badge">Inherited</span>`);
-  if (implementation.groupIds.length) badges.push(`<span class="micro-badge">${implementation.groupIds.length} impl group${implementation.groupIds.length === 1 ? '' : 's'}</span>`);
   if (outgoing.length) badges.push(`<span class="micro-badge">Requires ${outgoing.length}</span>`);
   if (incoming.length) badges.push(`<span class="micro-badge">Required by ${incoming.length}</span>`);
   if (blockers.length) badges.push(`<span class="micro-badge warning">${blockers.length} blocking conflict${blockers.length === 1 ? '' : 's'}</span>`);
@@ -384,12 +383,12 @@ function renderImplementationRow(implementation, allConflicts, v) {
   const focused = focusedConflictId ? byId(allConflicts, focusedConflictId) : null;
   const focusClass = focusedConflictId ? (focused?.implementationIds.includes(implementation.id) ? 'conflict-member' : 'conflict-muted') : '';
   return `<article class="impl-row ${locked ? 'locked' : ''} ${selected ? 'selected' : ''} ${blockers.length ? 'incompatible' : ''} ${focusClass}" data-implementation-id="${implementation.id}">
-    <button class="lock-button ${locked ? 'active' : ''}" data-action="toggle-lock" data-id="${implementation.id}" ${cannotLock ? 'disabled' : ''} title="${locked ? 'Unlock' : blockers.length ? 'Would complete a conflict' : missingRequirements.length ? 'Requires an implementation unavailable in this theme' : 'Lock'}">${locked ? '✓' : '○'}</button>
     <div class="impl-main">
       <button class="impl-title-button" data-action="open-inspector" data-id="${implementation.id}">${escapeHtml(implementation.title)}</button>
       <div class="impl-subline">${implementationBadges(implementation, blockers, relatedConflicts, implementation.directInTheme)}</div>
     </div>
     <div class="impl-actions">
+      <button class="lock-button ${locked ? 'active' : ''}" data-action="toggle-lock" data-id="${implementation.id}" ${cannotLock ? 'disabled' : ''} title="${locked ? 'Unlock' : blockers.length ? 'Would complete a conflict' : missingRequirements.length ? 'Requires an implementation unavailable in this theme' : 'Lock'}">${locked ? '✓' : '○'}</button>
       <button data-action="toggle-impl-details" data-id="${implementation.id}" title="Toggle details">${expanded ? '▴' : '▾'}</button>
       <button data-action="hide-implementation" data-id="${implementation.id}" title="Hide in this view">◉</button>
     </div>
@@ -420,8 +419,6 @@ function renderBoard() {
   } else {
     board.innerHTML = ideas.map((idea) => {
       const groups = idea.groupIds.map((groupId) => byId(state.ideaGroups, groupId)).filter(Boolean);
-      const linkedImplementationGroups = unique(state.groupLinks.filter((link) => idea.groupIds.includes(link.ideaGroupId)).map((link) => link.implementationGroupId))
-        .map((groupId) => byId(state.implementationGroups, groupId)).filter(Boolean);
       const implementations = effective.filter((implementation) => implementation.ideaIds.includes(idea.id));
       const visibleImplementations = implementations.filter((implementation) => visible.has(implementation.id));
       const hiddenImplementations = implementations.filter((implementation) => !visible.has(implementation.id));
@@ -429,18 +426,14 @@ function renderBoard() {
       const expanded = v.expandedIdeaIds.includes(idea.id);
       return `<section class="idea-card" data-idea-id="${idea.id}" style="${ideaCardStyle(idea)}">
         <header class="idea-header">
-          <div>
-            <h2 class="idea-title">${escapeHtml(idea.title)}</h2>
-            <div class="badge-row">
-              ${groups.map((group) => `<span class="badge"><span class="color-dot" style="background:${group.color || '#d5dbe5'}"></span>${escapeHtml(group.name || 'Untitled group')}</span>`).join('')}
-              ${linkedImplementationGroups.map((group) => `<span class="badge semantic">↔ ${escapeHtml(group.name || 'Untitled group')}</span>`).join('')}
-              ${!groups.length ? '<span class="badge">Ungrouped</span>' : ''}
+          <h2 class="idea-title">${escapeHtml(idea.title)}</h2>
+          <div class="idea-control-row">
+            <div class="idea-group-dots" aria-label="Idea groups">${groups.map((group) => `<span class="color-dot" title="${escapeHtml(group.name || 'Untitled group')}" style="background:${group.color || '#d5dbe5'}"></span>`).join('')}</div>
+            <div class="idea-actions">
+              <button class="icon-button" data-action="toggle-idea-details" data-id="${idea.id}" title="Toggle details">${expanded ? '▴' : '▾'}</button>
+              <button class="icon-button" data-action="edit-idea" data-id="${idea.id}" title="Edit idea">✎</button>
+              <button class="icon-button" data-action="add-implementation" data-idea-id="${idea.id}" title="Add implementation">＋</button>
             </div>
-          </div>
-          <div class="idea-actions">
-            <button class="icon-button" data-action="toggle-idea-details" data-id="${idea.id}" title="Toggle details">${expanded ? '▴' : '▾'}</button>
-            <button class="icon-button" data-action="edit-idea" data-id="${idea.id}" title="Edit idea">✎</button>
-            <button class="icon-button" data-action="add-implementation" data-idea-id="${idea.id}" title="Add implementation">＋</button>
           </div>
         </header>
         ${expanded && idea.detailsHtml ? `<div class="idea-details">${sanitizeHtml(idea.detailsHtml)}</div>` : ''}
@@ -487,6 +480,7 @@ function startBoardDrag(drag, event) {
   drag.source.classList.add('drag-origin');
   const rect = drag.source.getBoundingClientRect();
   drag.ghost = drag.source.cloneNode(true);
+  drag.ghost.classList.remove('drag-origin');
   drag.ghost.className = `${drag.ghost.className} drag-ghost`;
   drag.ghost.style.width = `${rect.width}px`;
   drag.ghost.style.transform = `translate(${event.clientX + 12}px, ${event.clientY + 12}px)`;

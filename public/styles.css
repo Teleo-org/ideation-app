@@ -255,13 +255,15 @@ a { color: var(--primary-dark); }
 .workspace { min-height: 0; overflow: hidden; display: grid; grid-template-columns: 1fr; }
 .workspace.has-inspector { grid-template-columns: 1fr 360px; }
 .board-wrap { min-width: 0; min-height: 0; overflow: auto; padding: 16px; }
-.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; align-content: start; }
+.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 16px; align-content: start; }
 .idea-card { display: block; width: 100%; margin: 0; border: 1px solid var(--card-border); border-radius: 16px; overflow: hidden; box-shadow: 0 6px 18px var(--card-shadow); color: var(--idea-fg); background: var(--idea-bg); touch-action: pan-y; user-select: none; }
-.idea-header { padding: 14px; display: flex; gap: 10px; justify-content: space-between; align-items: flex-start; }
-.idea-header > div:first-child { min-width: 0; }
+.idea-header { padding: 12px 14px; display: grid; gap: 8px; }
 .idea-title { margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 18px; line-height: 1.25; text-shadow: 0 1px 1px rgba(255,255,255,.15), 0 1px 3px rgba(0,0,0,.15); }
-.idea-actions { display: flex; gap: 5px; }
-.idea-actions .icon-button { width: 30px; height: 30px; font-size: 14px; background: var(--badge-bg); }
+.idea-control-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.idea-group-dots { display: flex; align-items: center; gap: 5px; min-height: 20px; }
+.idea-group-dots .color-dot { margin: 0; }
+.idea-actions { display: flex; gap: 4px; }
+.idea-actions .icon-button { width: 25px; height: 25px; font-size: 13px; background: var(--badge-bg); }
 .badge-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 .badge { display: inline-flex; align-items: center; gap: 4px; min-height: 22px; padding: 3px 7px; border-radius: 999px; background: var(--badge-bg); color: var(--badge-fg); border: 1px solid var(--card-border); font-size: 11px; font-weight: 800; backdrop-filter: blur(8px); }
 .badge.semantic { background: var(--semantic-badge-bg); color: var(--semantic-badge-fg); border-color: transparent; }
@@ -269,7 +271,7 @@ a { color: var(--primary-dark); }
 .idea-details > :first-child, .impl-details > :first-child, .rich-content > :first-child { margin-top: 0; }
 .idea-details > :last-child, .impl-details > :last-child, .rich-content > :last-child { margin-bottom: 0; }
 .implementation-list { padding: 9px; border-top: 1px solid var(--card-border); background: var(--impl-list-bg); color: var(--text); }
-.impl-row { position: relative; display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; margin-bottom: 7px; padding: 9px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); transition: .15s ease; touch-action: pan-y; user-select: none; }
+.impl-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; align-items: start; margin-bottom: 7px; padding: 8px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); transition: .15s ease; touch-action: pan-y; user-select: none; }
 .impl-row:last-child { margin-bottom: 0; }
 .impl-row:hover { border-color: var(--focus-border); box-shadow: 0 4px 12px var(--card-shadow); }
 .impl-row.locked { border-color: var(--primary); box-shadow: 0 0 0 2px var(--focus-ring); }
@@ -277,17 +279,17 @@ a { color: var(--primary-dark); }
 .impl-row.incompatible { background: var(--warn-row-bg); border-color: var(--warn-row-border); }
 .impl-row.conflict-member { outline: 3px solid #e11d48; outline-offset: 1px; }
 .impl-row.conflict-muted { opacity: .42; }
-.lock-button { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--surface); font-size: 16px; }
+.lock-button { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface); font-size: 13px; }
 .lock-button.active { background: var(--primary); border-color: var(--primary); color: white; }
 .impl-main { min-width: 0; }
 .impl-title-button { width: 100%; padding: 0; border: 0; background: none; text-align: left; color: var(--text); font-weight: 850; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.impl-subline { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 4px; }
-.micro-badge { display: inline-flex; align-items: center; min-height: 18px; padding: 2px 5px; border-radius: 6px; background: var(--surface-2); color: var(--text-3); font-size: 10px; font-weight: 800; }
+.impl-subline { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; margin-top: 3px; }
+.micro-badge { display: inline-flex; align-items: center; min-height: 16px; padding: 1px 4px; border-radius: 5px; background: var(--surface-2); color: var(--text-3); font-size: 9px; font-weight: 800; }
 .micro-badge.warning { background: var(--warning-bg); color: var(--warning-fg); }
 .micro-badge.conflict { background: var(--conflict-bg); color: var(--conflict-fg); border: 0; cursor: pointer; }
-.impl-actions { display: flex; gap: 3px; }
-.impl-actions button { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text-3); }
-.impl-details { grid-column: 2 / -1; padding: 9px; border-radius: 9px; background: var(--surface-3); color: var(--text-2); line-height: 1.45; }
+.impl-actions { display: flex; flex-direction: column; gap: 3px; }
+.impl-actions button { width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text-3); font-size: 12px; }
+.impl-details { grid-column: 1 / -1; padding: 8px; border-radius: 9px; background: var(--surface-3); color: var(--text-2); line-height: 1.45; }
 .drag-origin { visibility: hidden; }
 .drag-ghost { position: fixed !important; top: 0; left: 0; z-index: 100; margin: 0 !important; opacity: .92; pointer-events: none; box-shadow: 0 16px 36px rgba(17,24,39,.26) !important; transform-origin: top left; }
 .is-dragging-board, .is-dragging-board * { cursor: grabbing !important; }
