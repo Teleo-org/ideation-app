@@ -18,6 +18,7 @@ function securityHeaders(response) {
   headers.set('x-content-type-options', 'nosniff');
   headers.set('referrer-policy', 'strict-origin-when-cross-origin');
   headers.set('x-frame-options', 'DENY');
+  headers.set('strict-transport-security', 'max-age=31536000; includeSubDomains');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
@@ -129,6 +130,10 @@ async function api(request, env, url) {
 
 export default { async fetch(request, env) {
   const url = new URL(request.url);
+  if (url.protocol === 'http:') {
+    url.protocol = 'https:';
+    return Response.redirect(url.toString(), 308);
+  }
   if (request.method === 'OPTIONS') return new Response(null, { status: 204 });
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/attachments/')) return securityHeaders(await api(request, env, url));
   return securityHeaders(await env.ASSETS.fetch(request));
