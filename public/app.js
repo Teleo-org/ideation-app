@@ -33,6 +33,7 @@ let clerk = null;
 let guestState = null;
 let cloudWorkspaceReady = false;
 let authenticationError = '';
+let pendingCloudConflict = null;
 const GUEST_STORAGE_KEY = 'ideation-workbench:guest-state:v1';
 const GUEST_BACKUP_KEY = 'ideation-workbench:guest-backup-before-cloud:v1';
 
@@ -63,6 +64,10 @@ function renderStorageNotice() {
   if (!notice) return;
   if (storageMode === 'cloud') {
     notice.textContent = 'Saved to your private account.';
+    return;
+  }
+  if (pendingCloudConflict) {
+    notice.innerHTML = 'This browser project has not been uploaded. <button class="link-button" data-action="resolve-cloud-conflict">Choose where to save it</button>';
     return;
   }
   if (clerk?.user && cloudWorkspaceReady) {
@@ -305,8 +310,9 @@ function getRichValue(root = modalBody) {
 }
 
 function renderThemePicker() {
-  $('#active-theme-label').textContent = themePath(state.activeThemeId);
-  $('#theme-picker-button').title = `Choose theme: ${themePath(state.activeThemeId)}`;
+  const name = activeTheme()?.name || 'Choose theme';
+  $('#active-theme-label').textContent = name;
+  $('#theme-picker-button').title = `Choose theme: ${name}`;
 }
 
 function openThemePicker() {
@@ -563,27 +569,34 @@ async function connectSignedInUser() {
     return;
   }
   cloudWorkspaceReady = true;
-  if (guestHasWork(browserProject)) {
+  const browserHasWork = guestHasWork(browserProject);
+  const cloudHasWork = guestHasWork(status.state);
+  if (browserHasWork && !cloudHasWork) {
+    await uploadBrowserProjectToCloud(browserProject, 'This browser project is now saved to your private account.');
+    return;
+  }
+  if (browserHasWork && cloudHasWork) {
     storageMode = 'guest';
     guestState = browserProject;
     saveGuestState(browserProject);
+    pendingCloudConflict = status;
     openWorkbench({ state: browserProject, path: 'This browser (not uploaded)' });
+    openCloudConflictModal();
     return;
   }
   openWorkbench(status);
 }
 
-async function moveGuestProjectToCloud() {
-  if (!clerk?.user || !cloudWorkspaceReady || storageMode !== 'guest' || !state) return;
-  const browserProject = structuredClone(state);
+async function uploadBrowserProjectToCloud(browserProject, successMessage) {
   try {
     storageMode = 'cloud';
     const saved = await api('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(browserProject) });
     localStorage.setItem(GUEST_BACKUP_KEY, JSON.stringify(browserProject));
     localStorage.removeItem(GUEST_STORAGE_KEY);
     guestState = null;
+    pendingCloudConflict = null;
     openWorkbench({ state: saved, path: 'Private cloud workspace' });
-    showToast('This browser project is now saved to your private account.');
+    showToast(successMessage);
   } catch (error) {
     storageMode = 'guest';
     guestState = browserProject;
@@ -591,6 +604,16 @@ async function moveGuestProjectToCloud() {
     renderStorageNotice();
     showToast(`Your browser project was not moved: ${error.message}`);
   }
+}
+
+async function moveGuestProjectToCloud() {
+  if (!clerk?.user || !cloudWorkspaceReady || storageMode !== 'guest' || !state) return;
+  await uploadBrowserProjectToCloud(structuredClone(state), 'This browser project is now saved to your private account.');
+}
+
+function openCloudConflictModal() {
+  if (!pendingCloudConflict) return;
+  modalManager('Choose project to keep', `<p>Your account already has a cloud project, and this browser also has unsynced work.</p><p class="muted">Nothing will be overwritten until you choose.</p><div class="manager-list"><button class="button primary" data-action="use-cloud-project">Use the existing cloud project</button><button class="button secondary" data-action="replace-cloud-project">Replace cloud with this browser project</button><button class="button ghost" data-action="close-modal">Decide later</button></div>`);
 }
 
 function signOutAndReturnToBrowser({ removeBrowserCopy = false } = {}) {
@@ -982,6 +1005,7 @@ function handleAction(target) {
     return;
   }
   if (action === 'sync-guest') { moveGuestProjectToCloud(); return; }
+  if (action === 'resolve-cloud-conflict') { openCloudConflictModal(); return; }
   if (action === 'sign-out') { signOutAndReturnToBrowser(); return; }
   if (action === 'sign-out-and-remove-browser-copy') { signOutAndReturnToBrowser({ removeBrowserCopy: true }); return; }
   if (!state) { showToast('The workbench has not finished starting. Please reload this page.'); return; }
@@ -1032,6 +1056,15 @@ function handleAction(target) {
   else if (action === 'clear-conflict-focus') { focusedConflictId = null; renderBoard(); }
   else if (action === 'choose-theme') openThemePicker();
   else if (action === 'select-theme') { state.activeThemeId = itemId; currentInspectorId = null; focusedConflictId = null; closeModal(); render(); markDirty(); }
+  else if (action === 'use-cloud-project') {
+    const cloud = pendingCloudConflict;
+    pendingCloudConflict = null;
+    storageMode = 'cloud';
+    closeModal();
+    openWorkbench(cloud);
+    showToast('Using your existing private cloud project.');
+  }
+  else if (action === 'replace-cloud-project') { closeModal(); uploadBrowserProjectToCloud(structuredClone(state), 'This browser project replaced the cloud project.'); }
   else if (action === 'manage-structure') openStructureManager();
   else if (action === 'add-theme') { closeModal(); openThemeForm(); }
   else if (action === 'edit-theme') { closeModal(); openThemeForm(itemId); }
