@@ -33,7 +33,24 @@ async function authenticate(request, env) {
 
 async function provisionedUser(env, userId) {
   if (!userId) return null;
-  const user = await env.DB.prepare('SELECT clerk_user_id, email, provisioned FROM app_users WHERE clerk_user_id = ?').bind(userId).first();
+  let user = await env.DB.prepare('SELECT clerk_user_id, email, provisioned FROM app_users WHERE clerk_user_id = ?').bind(userId).first();
+  if (!user && env.CLERK_SECRET_KEY && env.CLERK_PUBLISHABLE_KEY) {
+    const clerk = createClerkClient({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY });
+    const clerkUser = await clerk.users.getUser(userId);
+    const email = String(clerkUser.emailAddresses?.find((entry) => entry.id === clerkUser.primaryEmailAddressId)?.emailAddress || clerkUser.emailAddresses?.[0]?.emailAddress || '').toLowerCase();
+    if (email) {
+      const stamp = now();
+      const invited = await env.DB.prepare('SELECT email FROM invited_emails WHERE email = ?').bind(email).first();
+      const selfServiceCount = await env.DB.prepare("SELECT COUNT(*) AS count FROM registration_ledger WHERE source = 'self_service'").first();
+      const source = invited ? 'invite' : 'self_service';
+      const provisioned = Boolean(invited || Number(selfServiceCount?.count || 0) < SLOT_LIMIT);
+      await env.DB.batch([
+        env.DB.prepare('INSERT OR IGNORE INTO registration_ledger (clerk_user_id, source, registered_at) VALUES (?, ?, ?)').bind(userId, source, stamp),
+        env.DB.prepare('INSERT INTO app_users (clerk_user_id, email, provisioned, provisioned_at, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(clerk_user_id) DO NOTHING').bind(userId, email, provisioned ? 1 : 0, provisioned ? stamp : null, stamp),
+      ]);
+      user = await env.DB.prepare('SELECT clerk_user_id, email, provisioned FROM app_users WHERE clerk_user_id = ?').bind(userId).first();
+    }
+  }
   return user?.provisioned ? user : null;
 }
 

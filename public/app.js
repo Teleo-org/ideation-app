@@ -70,8 +70,8 @@ function renderStorageNotice() {
     notice.innerHTML = 'This browser project has not been uploaded. <button class="link-button" data-action="resolve-cloud-conflict">Choose where to save it</button>';
     return;
   }
-  if (clerk?.user && cloudWorkspaceReady) {
-    notice.innerHTML = 'This project is saved only in this browser. <button class="link-button" data-action="sync-guest">Keep it with my account</button>';
+  if (clerk?.user) {
+    notice.innerHTML = 'Signed in, but this browser project is not connected to cloud storage yet. <button class="link-button" data-action="retry-cloud-connection">Connect it now</button>';
     return;
   }
   notice.innerHTML = 'Saved only in this browser. <button class="link-button" data-action="sign-in">Get an account to keep it across devices</button>';
@@ -587,6 +587,12 @@ async function connectSignedInUser() {
   openWorkbench(status);
 }
 
+async function retryCloudConnection() {
+  if (!clerk?.user) return;
+  try { await connectSignedInUser(); }
+  catch (error) { renderStorageNotice(); showToast(`Could not connect cloud storage: ${error.message}`); }
+}
+
 async function uploadBrowserProjectToCloud(browserProject, successMessage) {
   try {
     storageMode = 'cloud';
@@ -621,7 +627,11 @@ function openProjectMenu() {
   modalManager('Project', `<p><strong>${escapeHtml(state.meta.name)}</strong></p><p class="muted">${escapeHtml(projectPath)}</p><div class="manager-list"><button class="button secondary" data-action="open-share-menu">Share project</button><button class="button secondary" data-action="open-export-menu">Export…</button><button class="button secondary" data-action="open-import-menu">Import…</button>${accountAction}<button class="button danger" data-action="close-project">Close project</button></div>`);
 }
 
-function openShareMenu() {
+async function openShareMenu() {
+  if (storageMode !== 'cloud' && clerk?.user) {
+    await retryCloudConnection();
+    if (pendingCloudConflict) return;
+  }
   if (storageMode !== 'cloud') {
     modalManager('Share project', `<p>Public links are available after this project has been saved to your private cloud workspace.</p><p class="muted">Sign in and save this browser project first, then return here to create a permanent read-only link.</p><div class="manager-list"><button class="button ghost" data-action="project-menu">Back</button></div>`);
     return;
@@ -1051,6 +1061,7 @@ function handleAction(target) {
     return;
   }
   if (action === 'sync-guest') { moveGuestProjectToCloud(); return; }
+  if (action === 'retry-cloud-connection') { retryCloudConnection(); return; }
   if (action === 'resolve-cloud-conflict') { openCloudConflictModal(); return; }
   if (action === 'sign-out') { openSignOutMenu(); return; }
   if (action === 'open-sign-out-menu') { openSignOutMenu(); return; }
