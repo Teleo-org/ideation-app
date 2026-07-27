@@ -87,14 +87,14 @@
         <input id="search-input" type="search" placeholder="Search ideas and implementations…" />
       </label>
       <label class="compact-field">
-        <span>Idea group</span>
-        <select id="idea-group-filter"></select>
+        <span>Idea groups</span>
+        <details id="idea-group-filter" class="group-filter"><summary id="idea-group-filter-label">All groups</summary><div id="idea-group-filter-options"></div></details>
       </label>
       <button class="button ghost compact" data-action="show-all">Show all</button>
       <button class="button ghost compact" data-action="hide-all">Hide all</button>
       <button class="button ghost compact" data-action="restore-visible">Restore previous</button>
-      <label class="toggle-label"><input id="show-excluded" type="checkbox" checked /> Show excluded</label>
-      <div class="lock-summary"><strong id="lock-count">0 locked</strong><button class="link-button" data-action="clear-locks">Clear</button></div>
+      <label class="toggle-label" title="Shows implementations that cannot currently be locked because they would complete a conflict. Turn it off to hide them."><input id="show-excluded" type="checkbox" checked /> Show excluded</label>
+      <div class="lock-summary"><strong id="lock-count">0 locked</strong><button id="lock-selected" class="button primary compact" data-action="lock-selected" hidden></button><button class="link-button" data-action="clear-locks">Clear</button></div>
     </section>
 
     <div class="workspace">

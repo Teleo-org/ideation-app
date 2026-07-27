@@ -7,7 +7,6 @@ import {
   normalizeLockedWithRequirements,
   readableTextColor,
   themeChain,
-  unlockRequirementDependents,
 } from './core.mjs';
 import { modeGlyph, modeLabel, nextMode, normalizeMode, resolveThemeMode } from './theme-mode.mjs';
 import { generateExportMarkdown, stripBoldFromState, parseImportMarkdown } from './export.mjs';
@@ -192,7 +191,8 @@ function setStatus(message) { $('#save-status').textContent = message; }
 function defaultView() {
   return {
     lockedImplementationIds: [], visibleImplementationIds: [], previousVisibleImplementationIds: [],
-    expandedIdeaIds: [], expandedImplementationIds: [], showExcluded: true, search: '', ideaGroupFilter: 'all',
+    manuallyLockedImplementationIds: [], selectedImplementationIds: [],
+    expandedIdeaIds: [], expandedImplementationIds: [], showExcluded: true, search: '', ideaGroupFilterIds: [],
     knownImplementationIds: [],
   };
 }
@@ -216,7 +216,11 @@ function syncViewWithTheme(target) {
     ...newlyEffective,
   ]);
   target.previousVisibleImplementationIds = (target.previousVisibleImplementationIds || []).filter((itemId) => effectiveSet.has(itemId));
-  target.lockedImplementationIds = normalizeLockedWithRequirements(conflictsForTheme(), requirements(), (target.lockedImplementationIds || []).filter((itemId) => effectiveSet.has(itemId)), effectiveIds);
+  if (!Array.isArray(target.manuallyLockedImplementationIds)) target.manuallyLockedImplementationIds = [...(target.lockedImplementationIds || [])];
+  target.manuallyLockedImplementationIds = target.manuallyLockedImplementationIds.filter((itemId) => effectiveSet.has(itemId));
+  target.lockedImplementationIds = normalizeLockedWithRequirements(conflictsForTheme(), requirements(), target.manuallyLockedImplementationIds, effectiveIds);
+  target.selectedImplementationIds = (target.selectedImplementationIds || []).filter((itemId) => effectiveSet.has(itemId));
+  if (!Array.isArray(target.ideaGroupFilterIds)) target.ideaGroupFilterIds = target.ideaGroupFilter && target.ideaGroupFilter !== 'all' ? [target.ideaGroupFilter] : [];
   target.expandedImplementationIds = (target.expandedImplementationIds || []).filter((itemId) => effectiveSet.has(itemId));
   target.knownImplementationIds = effectiveIds;
 }
@@ -370,11 +374,23 @@ function renderFilters() {
   const v = view();
   $('#search-input').value = v.search;
   $('#show-excluded').checked = v.showExcluded;
-  $('#idea-group-filter').innerHTML = `<option value="all">All groups</option><option value="ungrouped">Ungrouped</option>${state.ideaGroups.map((group) => `<option value="${group.id}" ${v.ideaGroupFilter === group.id ? 'selected' : ''}>${escapeHtml(group.name || 'Untitled group')}</option>`).join('')}`;
-  $('#idea-group-filter').value = v.ideaGroupFilter;
+  const selectedGroups = new Set(v.ideaGroupFilterIds);
+  const groupLabel = !selectedGroups.size ? 'All groups' : selectedGroups.size === 1 && selectedGroups.has('__ungrouped__') ? 'Ungrouped' : `${selectedGroups.size} group${selectedGroups.size === 1 ? '' : 's'}`;
+  $('#idea-group-filter-label').textContent = groupLabel;
+  $('#idea-group-filter-options').innerHTML = `<div class="group-filter-row"><button data-action="filter-idea-group-only" data-id="all">All groups</button></div><div class="group-filter-row"><button data-action="filter-idea-group-only" data-id="__ungrouped__">Ungrouped</button><button class="group-filter-toggle ${selectedGroups.has('__ungrouped__') ? 'active' : ''}" data-action="toggle-idea-group-filter" data-id="__ungrouped__" aria-label="Toggle ungrouped">${selectedGroups.has('__ungrouped__') ? '✓' : '+'}</button></div>${state.ideaGroups.map((group) => `<div class="group-filter-row"><button data-action="filter-idea-group-only" data-id="${group.id}">${escapeHtml(group.name || 'Untitled group')}</button><button class="group-filter-toggle ${selectedGroups.has(group.id) ? 'active' : ''}" data-action="toggle-idea-group-filter" data-id="${group.id}" aria-label="Toggle ${escapeHtml(group.name || 'group')}">${selectedGroups.has(group.id) ? '✓' : '+'}</button></div>`).join('')}`;
   $('#lock-count').textContent = `${v.lockedImplementationIds.length} locked`;
+  const selected = v.selectedImplementationIds.filter((id) => byId(state.implementations, id));
+  const lockSelected = $('#lock-selected');
+  if (lockSelected) {
+    lockSelected.hidden = !selected.length;
+    const allManual = selected.every((id) => v.manuallyLockedImplementationIds.includes(id));
+    const conflicts = conflictsForTheme().filter((conflict) => selected.some((id) => conflict.implementationIds.includes(id))).map((conflict) => conflict.name).slice(0, 3);
+    const required = requirements().filter((item) => selected.includes(item.fromImplementationId)).map((item) => `${byId(state.implementations, item.fromImplementationId)?.title || 'Implementation'} → ${byId(state.implementations, item.toImplementationId)?.title || 'implementation'}`).slice(0, 3);
+    lockSelected.textContent = `${allManual ? 'Unlock' : 'Lock'} selected (${selected.length})`;
+    lockSelected.title = `${allManual ? 'Unlock selected implementations' : 'Lock selected implementations and their requirements'}${conflicts.length ? `\nConflicts: ${conflicts.join(', ')}` : ''}${required.length ? `\nRequirements: ${required.join(', ')}` : ''}`;
+  }
   const relationshipButton = $('#relationship-button');
-  if (relationshipButton) relationshipButton.hidden = v.lockedImplementationIds.filter((id) => byId(state.implementations, id)).length < 2;
+  if (relationshipButton) relationshipButton.hidden = selected.length < 2;
 }
 
 function ideaCardStyle(idea) {
@@ -404,7 +420,7 @@ function renderImplementationRow(implementation, allConflicts, v) {
   if (blockers.length && !v.showExcluded) return '';
   const relatedConflicts = allConflicts.filter((conflict) => conflict.implementationIds.includes(implementation.id));
   const expanded = v.expandedImplementationIds.includes(implementation.id);
-  const selected = currentInspectorId === implementation.id;
+  const selected = v.selectedImplementationIds.includes(implementation.id);
   const focused = focusedConflictId ? byId(allConflicts, focusedConflictId) : null;
   const focusClass = focusedConflictId ? (focused?.implementationIds.includes(implementation.id) ? 'conflict-member' : 'conflict-muted') : '';
   return `<article class="impl-row ${locked ? 'locked' : ''} ${selected ? 'selected' : ''} ${blockers.length ? 'incompatible' : ''} ${focusClass}" data-implementation-id="${implementation.id}">
@@ -413,7 +429,7 @@ function renderImplementationRow(implementation, allConflicts, v) {
       <div class="impl-subline">${implementationBadges(implementation, blockers, relatedConflicts, implementation.directInTheme)}</div>
     </div>
     <div class="impl-actions">
-      <button class="lock-button ${locked ? 'active' : ''}" data-action="toggle-lock" data-id="${implementation.id}" ${cannotLock ? 'disabled' : ''} title="${locked ? 'Unlock' : blockers.length ? 'Would complete a conflict' : missingRequirements.length ? 'Requires an implementation unavailable in this theme' : 'Lock'}">${locked ? '✓' : '○'}</button>
+      <button class="lock-button ${selected ? 'active' : ''}" data-action="toggle-selection" data-id="${implementation.id}" title="${selected ? 'Deselect' : 'Select'}">${selected ? '✓' : '○'}</button>
       <button data-action="toggle-impl-details" data-id="${implementation.id}" title="Toggle details">${expanded ? '▴' : '▾'}</button>
       <button data-action="hide-implementation" data-id="${implementation.id}" title="Hide in this view">◉</button>
     </div>
@@ -429,8 +445,9 @@ function renderBoard() {
   const allConflicts = conflictsForTheme();
   const visible = new Set(v.visibleImplementationIds);
   const search = v.search.trim().toLowerCase();
+  const selectedGroups = new Set(v.ideaGroupFilterIds || []);
   const ideas = state.ideas
-    .filter((idea) => v.ideaGroupFilter === 'all' || (v.ideaGroupFilter === 'ungrouped' ? !idea.groupIds.length : idea.groupIds.includes(v.ideaGroupFilter)))
+    .filter((idea) => !selectedGroups.size || (selectedGroups.has('__ungrouped__') && !idea.groupIds.length) || idea.groupIds.some((id) => selectedGroups.has(id)))
     .filter((idea) => {
       if (!search) return true;
       const ideaMatches = `${idea.title} ${idea.detailsHtml || ''}`.toLowerCase().includes(search);
@@ -1081,8 +1098,8 @@ function relationshipPicker(preselectedIds, pickedIds, showAll, query, actionPre
 }
 
 function openRelationshipFlow() {
-  const selected = view().lockedImplementationIds.filter((id) => byId(state.implementations, id));
-  if (selected.length < 2) { showToast('Lock at least two implementations first.'); return; }
+  const selected = view().selectedImplementationIds.filter((id) => byId(state.implementations, id));
+  if (selected.length < 2) { showToast('Select at least two implementations first.'); return; }
   relationshipDraft = { preselected: selected, picked: [], conflictMembers: [], showAll: false, query: '', conflictMenuOpen: false, screen: 'flow' };
   renderRelationshipFlow();
 }
@@ -1215,7 +1232,7 @@ function removeImplementation(implementationId, ask = true) {
   state.requirements = requirements().filter((requirement) => requirement.fromImplementationId !== implementationId && requirement.toImplementationId !== implementationId);
   state.savedViews.forEach((saved) => { saved.lockedImplementationIds = saved.lockedImplementationIds.filter((id) => id !== implementationId); if (saved.richView) saved.richView.lockedImplementationIds = saved.richView.lockedImplementationIds.filter((id) => id !== implementationId); });
   Object.values(state.uiByTheme).forEach((item) => {
-    for (const key of ['lockedImplementationIds', 'visibleImplementationIds', 'previousVisibleImplementationIds', 'expandedImplementationIds', 'knownImplementationIds']) item[key] = (item[key] || []).filter((id) => id !== implementationId);
+    for (const key of ['lockedImplementationIds', 'manuallyLockedImplementationIds', 'selectedImplementationIds', 'visibleImplementationIds', 'previousVisibleImplementationIds', 'expandedImplementationIds', 'knownImplementationIds']) item[key] = (item[key] || []).filter((id) => id !== implementationId);
   });
   if (currentInspectorId === implementationId) currentInspectorId = null;
   return true;
@@ -1360,20 +1377,33 @@ function handleAction(target) {
   else if (action === 'toggle-impl-details') { v.expandedImplementationIds = v.expandedImplementationIds.includes(itemId) ? v.expandedImplementationIds.filter((id) => id !== itemId) : [...v.expandedImplementationIds, itemId]; render(); markDirty(); }
   else if (action === 'hide-implementation') { v.previousVisibleImplementationIds = [...v.visibleImplementationIds]; v.visibleImplementationIds = v.visibleImplementationIds.filter((id) => id !== itemId); render(); markDirty(); }
   else if (action === 'show-implementation') { v.previousVisibleImplementationIds = [...v.visibleImplementationIds]; v.visibleImplementationIds = unique([...v.visibleImplementationIds, itemId]); render(); markDirty(); }
+  else if (action === 'filter-idea-group-only') { v.ideaGroupFilterIds = target.dataset.id === 'all' ? [] : [target.dataset.id]; render(); markDirty(); }
+  else if (action === 'toggle-idea-group-filter') { const groupId = target.dataset.id; v.ideaGroupFilterIds = v.ideaGroupFilterIds.includes(groupId) ? v.ideaGroupFilterIds.filter((id) => id !== groupId) : [...v.ideaGroupFilterIds, groupId]; renderFilters(); $('#idea-group-filter').open = true; renderBoard(); markDirty(); }
   else if (action === 'show-all') { v.previousVisibleImplementationIds = [...v.visibleImplementationIds]; v.visibleImplementationIds = implementationsForTheme().map((item) => item.id); render(); markDirty(); }
   else if (action === 'hide-all') { v.previousVisibleImplementationIds = [...v.visibleImplementationIds]; v.visibleImplementationIds = []; render(); markDirty(); }
   else if (action === 'restore-visible') { const previous = [...v.previousVisibleImplementationIds]; v.previousVisibleImplementationIds = [...v.visibleImplementationIds]; v.visibleImplementationIds = previous; render(); markDirty(); }
-  else if (action === 'toggle-lock') {
-    if (v.lockedImplementationIds.includes(itemId)) v.lockedImplementationIds = unlockRequirementDependents(requirements(), v.lockedImplementationIds, itemId);
-    else {
-      const proposal = lockWithRequirements(conflictsForTheme(), requirements(), v.lockedImplementationIds, itemId, implementationsForTheme().map((item) => item.id));
-      if (proposal.missingIds.length) showToast('This choice requires an implementation that is unavailable in this theme.');
-      else if (proposal.completedConflicts.length) showToast(`This requirement chain would complete ${proposal.completedConflicts.length} conflict${proposal.completedConflicts.length === 1 ? '' : 's'}.`);
-      else v.lockedImplementationIds = proposal.locked;
+  else if (action === 'toggle-selection') { v.selectedImplementationIds = v.selectedImplementationIds.includes(itemId) ? v.selectedImplementationIds.filter((id) => id !== itemId) : [...v.selectedImplementationIds, itemId]; render(); markDirty(); }
+  else if (action === 'lock-selected') {
+    const selected = v.selectedImplementationIds;
+    const allManual = selected.length && selected.every((id) => v.manuallyLockedImplementationIds.includes(id));
+    if (allManual) {
+      v.manuallyLockedImplementationIds = v.manuallyLockedImplementationIds.filter((id) => !selected.includes(id));
+    } else {
+      const manual = [...v.manuallyLockedImplementationIds];
+      const rejected = [];
+      for (const candidateId of selected) {
+        if (manual.includes(candidateId)) continue;
+        const proposal = lockWithRequirements(conflictsForTheme(), requirements(), normalizeLockedWithRequirements(conflictsForTheme(), requirements(), manual, implementationsForTheme().map((item) => item.id)), candidateId, implementationsForTheme().map((item) => item.id));
+        if (proposal.missingIds.length || proposal.completedConflicts.length) rejected.push(byId(state.implementations, candidateId)?.title || 'Implementation');
+        else manual.push(candidateId);
+      }
+      v.manuallyLockedImplementationIds = manual;
+      if (rejected.length) showToast(`Could not lock: ${rejected.join(', ')}. Check its conflicts or requirements.`);
     }
-    render(); markDirty();
+    v.selectedImplementationIds = [];
+    syncViewWithTheme(v); render(); markDirty();
   }
-  else if (action === 'clear-locks') { v.lockedImplementationIds = []; render(); markDirty(); }
+  else if (action === 'clear-locks') { v.manuallyLockedImplementationIds = []; v.lockedImplementationIds = []; v.selectedImplementationIds = []; render(); markDirty(); }
   else if (action === 'open-inspector') { currentInspectorId = itemId; renderInspector(true); }
   else if (action === 'focus-conflict') { focusedConflictId = itemId; closeModal(); render(); }
   else if (action === 'clear-conflict-focus') { focusedConflictId = null; renderBoard(); }
@@ -1543,7 +1573,6 @@ modal.addEventListener('cancel', (event) => {
 });
 
 $('#search-input').addEventListener('input', (event) => { view().search = event.target.value; renderBoard(); markDirty(); });
-$('#idea-group-filter').addEventListener('change', (event) => { view().ideaGroupFilter = event.target.value; renderBoard(); markDirty(); });
 $('#show-excluded').addEventListener('change', (event) => { view().showExcluded = event.target.checked; renderBoard(); markDirty(); });
 $('#inspector').addEventListener('submit', (event) => {
   if (event.target.id !== 'inspector-form') return;
