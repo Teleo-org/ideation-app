@@ -4,6 +4,12 @@ node_modules/
 .env.development.local
 .env.test.local
 .env.production.local
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.cloudflare.env
+.cloudflare.env.*
+!.cloudflare.env.example
 coverage/
 .coverage
 *.lcov
@@ -11,9 +17,3 @@ dist/
 build/
 .cache
 *.backup
-core.test.mjs
-export.test.mjs
-theme-mode.test.mjs
-app.js
-export.mjs
-styles.css

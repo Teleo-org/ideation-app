@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ideation-workbench",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-07-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": "./build", "binding": "ASSETS" },
+  "vars": {
+    "APP_ORIGIN": "https://ideation.teleoflexuous.com"
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "ideation-workbench", "database_id": "REPLACE_DURING_PROVISIONING", "migrations_dir": "migrations" }
+  ],
+  "r2_buckets": [
+    { "binding": "ATTACHMENTS", "bucket_name": "ideation-workbench-attachments" }
+  ]
+}

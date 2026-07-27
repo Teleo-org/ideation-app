@@ -15,7 +15,7 @@
       } catch (e) {}
     })();
   </script>
-  <link rel="stylesheet" href="/styles.css?v=0.3.4" />
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <section id="project-gate" class="project-gate">
@@ -24,9 +24,9 @@
         <button class="color-mode-toggle" data-action="cycle-color-mode" type="button" title="Switch color theme" aria-label="Switch color theme"><span class="mode-glyph">◐</span></button>
       </div>
       <div class="brand-mark">IW</div>
-      <p class="eyebrow">Fully local personal tool</p>
+      <p class="eyebrow">Private, portable ideation</p>
       <h1>Ideation Workbench</h1>
-      <p class="muted">Choose a portable project folder. It will contain one SQLite database, attachments, and timestamped backups.</p>
+      <p class="muted">Work privately in this browser without an account, or sign in to store a private cloud workspace. You can always export your project as a portable folder or ZIP.</p>
       <label class="field">
         <span>Project folder</span>
         <div class="path-row">
@@ -49,6 +49,11 @@
           <button class="button secondary" data-action="open-included-project">Open included</button>
         </div>
       </section>
+      <div id="hosted-access" class="manager-list">
+        <button class="button primary wide" data-action="continue-guest">Continue in this browser</button>
+        <button id="sign-in-button" class="button secondary wide" data-action="sign-in">Sign in for cloud storage</button>
+        <button id="sign-out-button" class="button ghost wide" data-action="sign-out" hidden>Sign out</button>
+      </div>
       <p id="gate-error" class="error-text" role="alert"></p>
     </div>
   </section>
@@ -122,6 +127,6 @@
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
-  <script type="module" src="/app.js?v=0.3.4"></script>
+  <script type="module" src="/app.mjs"></script>
 </body>
 </html>

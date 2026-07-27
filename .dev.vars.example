@@ -1,0 +1,6 @@
+# Cloudflare Wrangler local-development bindings. Copy this file to .dev.vars.
+# Values here are never committed.
+CLERK_PUBLISHABLE_KEY=pk_test_REPLACE_WITH_CLERK_DEVELOPMENT_PUBLISHABLE_KEY
+CLERK_SECRET_KEY=sk_test_REPLACE_WITH_CLERK_DEVELOPMENT_SECRET_KEY
+CLERK_WEBHOOK_SIGNING_SECRET=whsec_REPLACE_WITH_CLERK_WEBHOOK_SIGNING_SECRET
+APP_ORIGIN=http://localhost:8787
