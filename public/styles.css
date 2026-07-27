@@ -255,10 +255,11 @@ a { color: var(--primary-dark); }
 .workspace { min-height: 0; overflow: hidden; display: grid; grid-template-columns: 1fr; }
 .workspace.has-inspector { grid-template-columns: 1fr 360px; }
 .board-wrap { min-width: 0; min-height: 0; overflow: auto; padding: 16px; }
-.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; align-content: start; }
-.idea-card { display: block; width: 100%; margin: 0; border: 1px solid var(--card-border); border-radius: 16px; overflow: hidden; box-shadow: 0 6px 18px var(--card-shadow); color: var(--idea-fg); background: var(--idea-bg); }
+.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; align-content: start; }
+.idea-card { display: block; width: 100%; margin: 0; border: 1px solid var(--card-border); border-radius: 16px; overflow: hidden; box-shadow: 0 6px 18px var(--card-shadow); color: var(--idea-fg); background: var(--idea-bg); touch-action: pan-y; user-select: none; }
 .idea-header { padding: 14px; display: flex; gap: 10px; justify-content: space-between; align-items: flex-start; }
-.idea-title { margin: 0; font-size: 18px; line-height: 1.25; text-shadow: 0 1px 1px rgba(255,255,255,.15), 0 1px 3px rgba(0,0,0,.15); }
+.idea-header > div:first-child { min-width: 0; }
+.idea-title { margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 18px; line-height: 1.25; text-shadow: 0 1px 1px rgba(255,255,255,.15), 0 1px 3px rgba(0,0,0,.15); }
 .idea-actions { display: flex; gap: 5px; }
 .idea-actions .icon-button { width: 30px; height: 30px; font-size: 14px; background: var(--badge-bg); }
 .badge-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
@@ -268,7 +269,7 @@ a { color: var(--primary-dark); }
 .idea-details > :first-child, .impl-details > :first-child, .rich-content > :first-child { margin-top: 0; }
 .idea-details > :last-child, .impl-details > :last-child, .rich-content > :last-child { margin-bottom: 0; }
 .implementation-list { padding: 9px; border-top: 1px solid var(--card-border); background: var(--impl-list-bg); color: var(--text); }
-.impl-row { position: relative; display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; margin-bottom: 7px; padding: 9px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); transition: .15s ease; }
+.impl-row { position: relative; display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; margin-bottom: 7px; padding: 9px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); transition: .15s ease; touch-action: pan-y; user-select: none; }
 .impl-row:last-child { margin-bottom: 0; }
 .impl-row:hover { border-color: var(--focus-border); box-shadow: 0 4px 12px var(--card-shadow); }
 .impl-row.locked { border-color: var(--primary); box-shadow: 0 0 0 2px var(--focus-ring); }
@@ -287,6 +288,9 @@ a { color: var(--primary-dark); }
 .impl-actions { display: flex; gap: 3px; }
 .impl-actions button { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text-3); }
 .impl-details { grid-column: 2 / -1; padding: 9px; border-radius: 9px; background: var(--surface-3); color: var(--text-2); line-height: 1.45; }
+.drag-origin { visibility: hidden; }
+.drag-ghost { position: fixed !important; top: 0; left: 0; z-index: 100; margin: 0 !important; opacity: .92; pointer-events: none; box-shadow: 0 16px 36px rgba(17,24,39,.26) !important; transform-origin: top left; }
+.is-dragging-board, .is-dragging-board * { cursor: grabbing !important; }
 .empty-impl { padding: 14px 8px; text-align: center; color: var(--faint); font-size: 13px; }
 .hidden-strip { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-strong); }
 .hidden-chip { display: inline-flex; gap: 5px; align-items: center; padding: 4px 7px; border: 1px dashed var(--border-strong); border-radius: 999px; background: var(--surface-3); color: var(--faint); font-size: 11px; }

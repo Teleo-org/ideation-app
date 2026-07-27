@@ -10,6 +10,7 @@ import {
 import { modeGlyph, modeLabel, nextMode, normalizeMode, resolveThemeMode } from './theme-mode.mjs';
 import { generateExportMarkdown, stripBoldFromState, parseImportMarkdown } from './export.mjs';
 import { downloadProjectZip, exportProjectDirectory, importProjectDirectory, importProjectFile } from './portable.mjs';
+import { ideaOrder, implementationOrder, implementationOrderForIdea } from './reorder.mjs';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -34,6 +35,7 @@ let guestState = null;
 let cloudWorkspaceReady = false;
 let authenticationError = '';
 let pendingCloudConflict = null;
+let activeDrag = null;
 const GUEST_STORAGE_KEY = 'ideation-workbench:guest-state:v1';
 const GUEST_BACKUP_KEY = 'ideation-workbench:guest-backup-before-cloud:v1';
 
@@ -413,18 +415,9 @@ function renderBoard() {
       const implementations = effective.filter((implementation) => implementation.ideaIds.includes(idea.id));
       const visibleImplementations = implementations.filter((implementation) => visible.has(implementation.id));
       const hiddenImplementations = implementations.filter((implementation) => !visible.has(implementation.id));
-      const sortedVisible = [...visibleImplementations].sort((a, b) => {
-        const aLocked = v.lockedImplementationIds.includes(a.id) ? 0 : 1;
-        const bLocked = v.lockedImplementationIds.includes(b.id) ? 0 : 1;
-        if (aLocked !== bLocked) return aLocked - bLocked;
-        const aBlockers = aLocked === 0 ? 0 : blockingConflicts(allConflicts, v.lockedImplementationIds, a.id).length;
-        const bBlockers = bLocked === 0 ? 0 : blockingConflicts(allConflicts, v.lockedImplementationIds, b.id).length;
-        if (Boolean(aBlockers) !== Boolean(bBlockers)) return aBlockers ? 1 : -1;
-        if (aBlockers !== bBlockers) return aBlockers - bBlockers;
-        return numberSort(a, b);
-      });
+      const sortedVisible = [...visibleImplementations].sort((a, b) => implementationOrderForIdea(a, idea.id) - implementationOrderForIdea(b, idea.id) || numberSort(a, b));
       const expanded = v.expandedIdeaIds.includes(idea.id);
-      return `<section class="idea-card" style="${ideaCardStyle(idea)}">
+      return `<section class="idea-card" data-idea-id="${idea.id}" style="${ideaCardStyle(idea)}">
         <header class="idea-header">
           <div>
             <h2 class="idea-title">${escapeHtml(idea.title)}</h2>
@@ -455,6 +448,94 @@ function renderBoard() {
     focusBanner.hidden = false;
     focusBanner.innerHTML = `<strong>${escapeHtml(focused.name)}</strong>${focused.detailsHtml ? ` — ${stripHtml(focused.detailsHtml).slice(0, 180)}` : ''} <button class="link-button" data-action="clear-conflict-focus">Clear highlight</button>`;
   } else focusBanner.hidden = true;
+}
+
+function draggableBoardItem(target) {
+  if (target.closest('button, a, input, select, textarea, [contenteditable="true"], .rich-toolbar')) return null;
+  const implementation = target.closest('.impl-row');
+  if (implementation) return { kind: 'implementation', source: implementation, id: implementation.dataset.implementationId, ideaId: implementation.closest('.idea-card')?.dataset.ideaId };
+  const idea = target.closest('.idea-card');
+  if (idea) return { kind: 'idea', source: idea, id: idea.dataset.ideaId };
+  return null;
+}
+
+function beginBoardPointer(event) {
+  if (activeDrag || (event.pointerType === 'mouse' && event.button !== 0)) return;
+  const item = draggableBoardItem(event.target);
+  if (!item?.id) return;
+  activeDrag = { ...item, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, dragging: false, ghost: null };
+  item.source.setPointerCapture?.(event.pointerId);
+}
+
+function moveDragGhost(drag, event) {
+  if (!drag.ghost) return;
+  drag.ghost.style.transform = `translate(${event.clientX + 12}px, ${event.clientY + 12}px)`;
+}
+
+function startBoardDrag(drag, event) {
+  drag.dragging = true;
+  drag.source.classList.add('drag-origin');
+  const rect = drag.source.getBoundingClientRect();
+  drag.ghost = drag.source.cloneNode(true);
+  drag.ghost.className = `${drag.ghost.className} drag-ghost`;
+  drag.ghost.style.width = `${rect.width}px`;
+  drag.ghost.style.transform = `translate(${event.clientX + 12}px, ${event.clientY + 12}px)`;
+  document.body.append(drag.ghost);
+  document.body.classList.add('is-dragging-board');
+}
+
+function reorderDragSlot(drag, event) {
+  const target = document.elementFromPoint(event.clientX, event.clientY);
+  if (!target) return;
+  const candidate = drag.kind === 'idea' ? target.closest('.idea-card') : target.closest('.impl-row');
+  if (!candidate || candidate === drag.source) return;
+  if (drag.kind === 'implementation' && candidate.closest('.idea-card')?.dataset.ideaId !== drag.ideaId) return;
+  const rect = candidate.getBoundingClientRect();
+  const sameRow = drag.kind === 'idea' && Math.abs(event.clientY - (rect.top + rect.height / 2)) < rect.height / 3;
+  const before = sameRow ? event.clientX < rect.left + rect.width / 2 : event.clientY < rect.top + rect.height / 2;
+  candidate.parentElement.insertBefore(drag.source, before ? candidate : candidate.nextSibling);
+}
+
+function finishBoardDrag(event, cancelled = false) {
+  const drag = activeDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  activeDrag = null;
+  drag.source.releasePointerCapture?.(event.pointerId);
+  if (drag.dragging) {
+    drag.ghost?.remove();
+    drag.source.classList.remove('drag-origin');
+    document.body.classList.remove('is-dragging-board');
+    if (!cancelled) {
+      if (drag.kind === 'idea') ideaOrder(state.ideas, $$('#board > .idea-card').map((item) => item.dataset.ideaId));
+      else {
+        const list = drag.source.closest('.implementation-list');
+        implementationOrder(state.implementations, drag.ideaId, $$('.impl-row', list).map((item) => item.dataset.implementationId));
+      }
+      renderBoard();
+      markDirty();
+    } else renderBoard();
+    event.preventDefault();
+    return;
+  }
+  if (drag.kind === 'idea') {
+    const v = view();
+    v.expandedIdeaIds = v.expandedIdeaIds.includes(drag.id) ? v.expandedIdeaIds.filter((id) => id !== drag.id) : [...v.expandedIdeaIds, drag.id];
+    renderBoard();
+    markDirty();
+  } else {
+    currentInspectorId = drag.id;
+    renderInspector(true);
+  }
+}
+
+function moveBoardDrag(event) {
+  const drag = activeDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  if (!drag.dragging && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 7) return;
+  if (!drag.dragging) startBoardDrag(drag, event);
+  moveDragGhost(drag, event);
+  reorderDragSlot(drag, event);
+  event.preventDefault();
 }
 
 function stripHtml(value = '') {
@@ -1282,6 +1363,10 @@ $('#inspector').addEventListener('submit', (event) => {
   render(); markDirty();
 });
 $('#inspector').addEventListener('change', (event) => { if (event.target.id === 'attachment-input') uploadAttachment(event.target); });
+$('#board').addEventListener('pointerdown', beginBoardPointer);
+document.addEventListener('pointermove', moveBoardDrag, { passive: false });
+document.addEventListener('pointerup', (event) => finishBoardDrag(event));
+document.addEventListener('pointercancel', (event) => finishBoardDrag(event, true));
 modal.addEventListener('cancel', (event) => { event.preventDefault(); closeModal(); });
 window.addEventListener('beforeunload', () => { if (storageMode === 'guest' && state) saveGuestState(state); });
 
