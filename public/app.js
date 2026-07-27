@@ -147,7 +147,16 @@ function sanitizeHtml(value = '') {
   return doc.body.firstElementChild?.innerHTML || '';
 }
 
-function id() { return crypto.randomUUID(); }
+function id() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
+  else for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 function byId(list, itemId) { return list.find((item) => item.id === itemId); }
 function unique(values) { return [...new Set(values)]; }
 function numberSort(a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0) || a.title.localeCompare(b.title); }
@@ -874,6 +883,7 @@ function handleAction(target) {
   }
   if (action === 'sync-guest') { moveGuestProjectToCloud(); return; }
   if (action === 'sign-out') { clerk?.signOut(() => location.reload()); return; }
+  if (!state) { showToast('The workbench has not finished starting. Please reload this page.'); return; }
   const v = state ? view() : null;
   if (action === 'browse-project') {
     const originalText = target.textContent;
