@@ -42,6 +42,7 @@ let activeDrag = null;
 let relationshipDraft = null;
 let requirementBuilder = null;
 let modalCloseReturn = null;
+let modalDirty = false;
 const GUEST_STORAGE_KEY = 'ideation-workbench:guest-state:v1';
 const GUEST_BACKUP_KEY = 'ideation-workbench:guest-backup-before-cloud:v1';
 
@@ -297,6 +298,7 @@ function modalForm(title, body, onSubmit, submitLabel = 'Save') {
   modalTitle.textContent = title;
   modalBody.innerHTML = `<form id="modal-form">${body}<div class="form-actions"><button type="button" class="button ghost" data-action="close-modal">Cancel</button><button type="submit" class="button primary">${escapeHtml(submitLabel)}</button></div></form>`;
   modalSubmitHandler = onSubmit;
+  modalDirty = false;
   modal.showModal();
 }
 
@@ -304,6 +306,7 @@ function modalManager(title, body) {
   modalTitle.textContent = title;
   modalBody.innerHTML = body;
   modalSubmitHandler = null;
+  modalDirty = false;
   modal.showModal();
 }
 
@@ -312,6 +315,21 @@ function closeModal() {
   modalBody.innerHTML = '';
   modalSubmitHandler = null;
   modalCloseReturn = null;
+  modalDirty = false;
+}
+
+function modalHasDiscardableWork() {
+  if (modalDirty) return true;
+  if (modalCloseReturn) return false;
+  if (relationshipDraft?.screen === 'conflict' && (relationshipDraft.picked.length || relationshipDraft.conflictMembers.length)) return true;
+  return Boolean(requirementBuilder && (requirementBuilder.picked.length || requirementBuilder.sides.some((side) => side.length)));
+}
+
+function dismissModal() {
+  if (modalHasDiscardableWork() && !confirm('Discard the unfinished relationship changes?')) return;
+  const returnTo = modalCloseReturn;
+  closeModal();
+  if (returnTo) returnTo();
 }
 
 function getRichValue(root = modalBody) {
@@ -1072,27 +1090,42 @@ function openRelationshipFlow() {
 function renderRelationshipFlow() {
   if (!relationshipDraft) return;
   relationshipDraft.screen = 'flow';
-  const picked = relationshipDraft.picked; const members = relationshipDraft.conflictMembers;
+  modalManager('Conflict / requirement', `<div class="relationship-entry"><div class="split-button"><button class="button danger wide" data-action="open-conflict-builder">Mark conflict</button><button class="button danger split-chevron" data-action="toggle-conflict-menu" aria-label="Conflict options">▾</button><div class="split-menu" ${relationshipDraft.conflictMenuOpen ? '' : 'hidden'}><button data-action="mark-preselected-conflict" data-conflict-mode="all">All preselected</button><button data-action="mark-preselected-conflict" data-conflict-mode="any">Any preselected pair</button></div></div><button class="button primary wide" data-action="open-requirement-builder">Build requirement</button></div>`);
+}
+
+function openConflictBuilder() {
+  if (!relationshipDraft) return;
+  relationshipDraft.screen = 'conflict';
+  relationshipDraft.picked = [];
+  relationshipDraft.conflictMembers = [];
+  relationshipDraft.conflictMenuOpen = false;
+  renderConflictBuilder();
+}
+
+function renderConflictBuilder() {
+  if (!relationshipDraft) return;
+  relationshipDraft.screen = 'conflict';
+  const picked = relationshipDraft.picked;
+  const members = relationshipDraft.conflictMembers;
   const memberChips = members.map((itemId) => `<span class="relationship-chip">${escapeHtml(byId(state.implementations, itemId)?.title || 'Missing')}<button class="remove-chip" data-action="remove-conflict-member" data-id="${itemId}" title="Remove">×</button></span>`).join('') || '<span class="muted tiny">Select implementations above, then add them to this conflict.</span>';
-  modalManager('Conflict / requirement', `<p class="muted">Preselected implementations are above the divider. Select any implementations, then add them to the relationship.</p>${relationshipPicker(relationshipDraft.preselected, picked, relationshipDraft.showAll, relationshipDraft.query, 'relationship')}<div class="relationship-add-row"><button class="button secondary compact" data-action="add-conflict-members" ${picked.length ? '' : 'disabled'}>Add to conflict</button><button class="button secondary compact" data-action="open-requirement-builder" ${picked.length ? '' : 'disabled'}>Build requirements</button></div><div class="conflict-members">${memberChips}</div><div class="relationship-actions"><div class="split-button"><button class="button danger" data-action="mark-selected-conflict" data-conflict-mode="all" ${members.length < 2 ? 'disabled' : ''}>Mark conflict</button><button class="button danger split-chevron" data-action="toggle-conflict-menu" aria-label="Conflict options">▾</button><div class="split-menu" ${relationshipDraft.conflictMenuOpen ? '' : 'hidden'}><button data-action="mark-selected-conflict" data-conflict-mode="all">All</button><button data-action="mark-selected-conflict" data-conflict-mode="any">Any</button><button data-action="open-more-conflict">More…</button></div></div></div><p class="tiny muted">All creates one multiway conflict. Any creates every pair. More opens optional conflict details.</p>`);
+  modalManager('Mark conflict', `<p class="muted">Nothing is selected yet. Your original selection is shown above the divider; select the implementations to add.</p>${relationshipPicker(relationshipDraft.preselected, picked, relationshipDraft.showAll, relationshipDraft.query, 'relationship')}<div class="relationship-add-row"><button class="button secondary compact" data-action="add-conflict-members" ${picked.length ? '' : 'disabled'}>Add to conflict</button></div><div class="conflict-members">${memberChips}</div><div class="relationship-actions"><div class="split-button"><button class="button danger" data-action="mark-selected-conflict" data-conflict-mode="all" ${members.length < 2 ? 'disabled' : ''}>Mark conflict</button><button class="button danger split-chevron" data-action="toggle-conflict-menu" aria-label="Conflict options">▾</button><div class="split-menu" ${relationshipDraft.conflictMenuOpen ? '' : 'hidden'}><button data-action="mark-selected-conflict" data-conflict-mode="all">All</button><button data-action="mark-selected-conflict" data-conflict-mode="any">Any</button><button data-action="open-more-conflict">More…</button></div></div></div><div class="form-actions"><button class="button ghost" data-action="relationship-back">Back</button></div>`);
 }
 
 function openMoreConflict() {
-  if (!relationshipDraft) return;
-  relationshipDraft.screen = 'more';
+  if (!relationshipDraft?.conflictMembers?.length) return;
   relationshipDraft.conflictMenuOpen = false;
-  openSelectedConflictDetails(relationshipDraft.conflictMembers);
+  openSelectedConflictDetails(relationshipDraft.conflictMembers, renderConflictBuilder);
 }
 
-function openSelectedConflictDetails(ids, returnToFlow = true) {
+function openSelectedConflictDetails(ids, returnTo = renderConflictBuilder) {
   const titles = ids.map((itemId) => byId(state.implementations, itemId)?.title || 'Implementation');
-  modalCloseReturn = returnToFlow ? renderRelationshipFlow : null;
+  modalCloseReturn = returnTo;
   modalForm('Conflict details', `<div class="form-grid"><label class="field full"><span>Name <small>(optional)</small></span><input name="name" value="${escapeHtml(titles.join(' + '))}" /></label><label class="field full"><span>Explanation <small>(optional)</small></span>${richEditor('', 'Why is this combination invalid?')}</label></div>`, async (form) => {
     const data = new FormData(form); const name = String(data.get('name') || '').trim() || titles.join(' + ');
     state.conflicts.push({ id: id(), name, detailsHtml: getRichValue(), themeId: state.activeThemeId, implementationIds: ids, overridesConflictId: null });
     relationshipDraft.conflictMembers = relationshipDraft.conflictMembers.filter((itemId) => !ids.includes(itemId));
     modalCloseReturn = null; closeModal(); render(); markDirty();
-    if (returnToFlow) renderRelationshipFlow();
+    if (returnTo) returnTo();
   });
 }
 
@@ -1102,7 +1135,7 @@ function markSelectedConflict(mode) {
   if (mode === 'any') {
     for (const pair of allPairs(selected)) state.conflicts.push({ id: id(), name: pair.map((itemId) => byId(state.implementations, itemId)?.title || 'Implementation').join(' ↔ '), detailsHtml: '', themeId: state.activeThemeId, implementationIds: pair, overridesConflictId: null });
     relationshipDraft.conflictMembers = [];
-    closeModal(); render(); markDirty(); renderRelationshipFlow();
+    closeModal(); render(); markDirty(); renderConflictBuilder();
     return;
   }
   openSelectedConflictDetails(selected);
@@ -1110,7 +1143,8 @@ function markSelectedConflict(mode) {
 
 function openRequirementBuilder() {
   if (!relationshipDraft) return;
-  requirementBuilder = { preselected: [...relationshipDraft.preselected], picked: [...relationshipDraft.picked], showAll: false, query: '', sides: [[], []] };
+  relationshipDraft.conflictMenuOpen = false;
+  requirementBuilder = { preselected: [...relationshipDraft.preselected], picked: [], showAll: false, query: '', sides: [[], []] };
   renderRequirementBuilder();
 }
 
@@ -1135,7 +1169,9 @@ function saveRequirementBuilder(details = {}) {
   if (!edges.length) { showToast('Add at least one implementation on both sides of a requirement.'); return; }
   const existing = new Set(requirements().map((item) => `${item.fromImplementationId}:${item.toImplementationId}`));
   for (const edge of edges) if (!existing.has(`${edge.fromImplementationId}:${edge.toImplementationId}`)) requirements().push({ id: id(), ...edge, ...details });
-  requirementBuilder = null; modalCloseReturn = null; closeModal(); render(); markDirty(); renderRelationshipFlow();
+  const preselected = [...requirementBuilder.preselected];
+  requirementBuilder = { preselected, picked: [], showAll: false, query: '', sides: [[], []] };
+  modalCloseReturn = null; closeModal(); render(); markDirty(); renderRequirementBuilder();
 }
 
 function captureRichView() {
@@ -1289,15 +1325,17 @@ function handleAction(target) {
       .finally(() => { clearTimeout(hintTimer); target.disabled = false; target.textContent = originalText; });
   } else if (action === 'open-project') openProjectFromGate();
   else if (action === 'open-included-project') openIncludedProject();
-  else if (action === 'close-modal') { const returnTo = modalCloseReturn; closeModal(); if (returnTo) returnTo(); }
+  else if (action === 'close-modal') dismissModal();
   else if (action === 'create-menu') openCreateMenu();
   else if (action === 'open-relationship-flow') openRelationshipFlow();
-  else if (action === 'relationship-toggle') { relationshipDraft.picked = relationshipDraft.picked.includes(itemId) ? relationshipDraft.picked.filter((id) => id !== itemId) : [...relationshipDraft.picked, itemId]; renderRelationshipFlow(); }
-  else if (action === 'relationship-more') { relationshipDraft.showAll = !relationshipDraft.showAll; renderRelationshipFlow(); }
-  else if (action === 'toggle-conflict-menu') { relationshipDraft.conflictMenuOpen = !relationshipDraft.conflictMenuOpen; renderRelationshipFlow(); }
-  else if (action === 'add-conflict-members') { relationshipDraft.conflictMembers = unique([...relationshipDraft.conflictMembers, ...relationshipDraft.picked]); relationshipDraft.picked = []; renderRelationshipFlow(); }
-  else if (action === 'remove-conflict-member') { relationshipDraft.conflictMembers = relationshipDraft.conflictMembers.filter((id) => id !== itemId); renderRelationshipFlow(); }
+  else if (action === 'open-conflict-builder') openConflictBuilder();
+  else if (action === 'relationship-toggle') { relationshipDraft.picked = relationshipDraft.picked.includes(itemId) ? relationshipDraft.picked.filter((id) => id !== itemId) : [...relationshipDraft.picked, itemId]; renderConflictBuilder(); }
+  else if (action === 'relationship-more') { relationshipDraft.showAll = !relationshipDraft.showAll; renderConflictBuilder(); }
+  else if (action === 'toggle-conflict-menu') { relationshipDraft.conflictMenuOpen = !relationshipDraft.conflictMenuOpen; relationshipDraft.screen === 'flow' ? renderRelationshipFlow() : renderConflictBuilder(); }
+  else if (action === 'add-conflict-members') { relationshipDraft.conflictMembers = unique([...relationshipDraft.conflictMembers, ...relationshipDraft.picked]); relationshipDraft.picked = []; renderConflictBuilder(); }
+  else if (action === 'remove-conflict-member') { relationshipDraft.conflictMembers = relationshipDraft.conflictMembers.filter((id) => id !== itemId); renderConflictBuilder(); }
   else if (action === 'mark-selected-conflict') markSelectedConflict(target.dataset.conflictMode);
+  else if (action === 'mark-preselected-conflict') { relationshipDraft.conflictMembers = [...relationshipDraft.preselected]; relationshipDraft.conflictMenuOpen = false; markSelectedConflict(target.dataset.conflictMode); }
   else if (action === 'open-more-conflict') openMoreConflict();
   else if (action === 'relationship-back') renderRelationshipFlow();
   else if (action === 'open-requirement-builder') openRequirementBuilder();
@@ -1500,11 +1538,8 @@ modal.addEventListener('submit', async (event) => {
 });
 
 modal.addEventListener('cancel', (event) => {
-  if (!modalCloseReturn) return;
   event.preventDefault();
-  const returnTo = modalCloseReturn;
-  closeModal();
-  returnTo();
+  dismissModal();
 });
 
 $('#search-input').addEventListener('input', (event) => { view().search = event.target.value; renderBoard(); markDirty(); });
@@ -1522,14 +1557,15 @@ $('#inspector').addEventListener('submit', (event) => {
 $('#inspector').addEventListener('change', (event) => { if (event.target.id === 'attachment-input') uploadAttachment(event.target); });
 modal.addEventListener('input', (event) => {
   const kind = event.target.dataset.relationshipSearch;
-  if (kind === 'relationship' && relationshipDraft) { relationshipDraft.query = event.target.value; renderRelationshipFlow(); }
+  if (kind === 'relationship' && relationshipDraft) { relationshipDraft.query = event.target.value; renderConflictBuilder(); }
   if (kind === 'builder' && requirementBuilder) { requirementBuilder.query = event.target.value; renderRequirementBuilder(); }
+  if (!kind && event.target.closest('#modal-form')) modalDirty = true;
 });
+modal.addEventListener('click', (event) => { if (event.target === modal) dismissModal(); });
 $('#board').addEventListener('pointerdown', beginBoardPointer);
 document.addEventListener('pointermove', moveBoardDrag, { passive: false });
 document.addEventListener('pointerup', (event) => finishBoardDrag(event));
 document.addEventListener('pointercancel', (event) => finishBoardDrag(event, true));
-modal.addEventListener('cancel', (event) => { event.preventDefault(); closeModal(); });
 window.addEventListener('beforeunload', () => { if (storageMode === 'guest' && state) saveGuestState(state); });
 
 boot();
