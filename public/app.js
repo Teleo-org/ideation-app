@@ -32,6 +32,7 @@ let storageMode = null;
 let clerk = null;
 let guestState = null;
 let cloudWorkspaceReady = false;
+let authenticationError = '';
 const GUEST_STORAGE_KEY = 'ideation-workbench:guest-state:v1';
 const GUEST_BACKUP_KEY = 'ideation-workbench:guest-backup-before-cloud:v1';
 
@@ -581,6 +582,7 @@ async function boot() {
     if (clerk.user) await connectSignedInUser();
     else renderStorageNotice();
   } catch (error) {
+    authenticationError = error.message || 'Authentication could not be initialized.';
     renderStorageNotice();
     console.warn('Cloud account features are unavailable:', error);
   }
@@ -878,7 +880,11 @@ function handleAction(target) {
   if (action === 'continue-guest') { continueAsGuest(); return; }
   if (action === 'sign-in') {
     if (storageMode === 'guest' && state) saveGuestState(state);
-    clerk?.openSignIn({ afterSignInUrl: window.location.href, afterSignUpUrl: window.location.href });
+    if (!clerk) {
+      showToast(authenticationError ? `Sign-in is unavailable: ${authenticationError}` : 'Sign-in is still loading. Please try again in a moment.');
+      return;
+    }
+    clerk.openSignIn({ afterSignInUrl: window.location.href, afterSignUpUrl: window.location.href });
     return;
   }
   if (action === 'sync-guest') { moveGuestProjectToCloud(); return; }
