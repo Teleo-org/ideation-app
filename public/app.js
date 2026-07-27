@@ -32,7 +32,9 @@ let includedProjects = [];
 let storageMode = null;
 let clerk = null;
 let guestState = null;
+let cloudWorkspaceReady = false;
 const GUEST_STORAGE_KEY = 'ideation-workbench:guest-state:v1';
+const GUEST_BACKUP_KEY = 'ideation-workbench:guest-backup-before-cloud:v1';
 
 function guestDefaultState(name = 'My Ideation Project') {
   const themeId = id();
@@ -49,6 +51,25 @@ function saveGuestState(next) {
   guestState = structuredClone(next);
   localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(guestState));
   return guestState;
+}
+
+function guestHasWork(candidate) {
+  if (!candidate) return false;
+  return Boolean(candidate.ideas?.length || candidate.implementations?.length || candidate.ideaGroups?.length || candidate.implementationGroups?.length || candidate.conflicts?.length || candidate.savedViews?.length || candidate.themes?.length > 1);
+}
+
+function renderStorageNotice() {
+  const notice = $('#storage-note');
+  if (!notice) return;
+  if (storageMode === 'cloud') {
+    notice.textContent = 'Saved to your private account.';
+    return;
+  }
+  if (clerk?.user && cloudWorkspaceReady) {
+    notice.innerHTML = 'This project is saved only in this browser. <button class="link-button" data-action="sync-guest">Keep it with my account</button>';
+    return;
+  }
+  notice.innerHTML = 'Saved only in this browser. <button class="link-button" data-action="sign-in">Get an account to keep it across devices</button>';
 }
 
 async function api(path, options = {}) {
@@ -469,6 +490,7 @@ function openWorkbench(status) {
   gate.hidden = true;
   app.hidden = false;
   render();
+  renderStorageNotice();
 }
 
 async function loadStatus() {
@@ -486,6 +508,49 @@ async function continueAsGuest() {
   storageMode = 'guest'; guestState = readGuestState(); await loadStatus();
 }
 
+async function connectSignedInUser() {
+  const browserProject = structuredClone(state || readGuestState());
+  storageMode = 'cloud';
+  const status = await api('/api/status');
+  if (!status.open) {
+    storageMode = 'guest';
+    guestState = browserProject;
+    cloudWorkspaceReady = false;
+    renderStorageNotice();
+    showToast('Your account is not provisioned for cloud storage yet. This browser project is unchanged.');
+    return;
+  }
+  cloudWorkspaceReady = true;
+  if (guestHasWork(browserProject)) {
+    storageMode = 'guest';
+    guestState = browserProject;
+    saveGuestState(browserProject);
+    openWorkbench({ state: browserProject, path: 'This browser (not uploaded)' });
+    return;
+  }
+  openWorkbench(status);
+}
+
+async function moveGuestProjectToCloud() {
+  if (!clerk?.user || !cloudWorkspaceReady || storageMode !== 'guest' || !state) return;
+  const browserProject = structuredClone(state);
+  try {
+    storageMode = 'cloud';
+    const saved = await api('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(browserProject) });
+    localStorage.setItem(GUEST_BACKUP_KEY, JSON.stringify(browserProject));
+    localStorage.removeItem(GUEST_STORAGE_KEY);
+    guestState = null;
+    openWorkbench({ state: saved, path: 'Private cloud workspace' });
+    showToast('This browser project is now saved to your private account.');
+  } catch (error) {
+    storageMode = 'guest';
+    guestState = browserProject;
+    saveGuestState(browserProject);
+    renderStorageNotice();
+    showToast(`Your browser project was not moved: ${error.message}`);
+  }
+}
+
 async function initializeClerk() {
   const config = await fetch('/api/config').then((response) => response.json());
   if (!config.clerkPublishableKey) throw new Error('Authentication is not configured yet.');
@@ -499,10 +564,15 @@ async function boot() {
   $('#project-name')?.closest('.field')?.setAttribute('hidden', '');
   $('[data-action="open-project"]')?.setAttribute('hidden', '');
   $('#included-projects')?.setAttribute('hidden', '');
+  await continueAsGuest();
   try {
     await initializeClerk();
-    if (clerk.user) { storageMode = 'cloud'; await loadStatus(); }
-  } catch (error) { $('#gate-error').textContent = error.message; }
+    if (clerk.user) await connectSignedInUser();
+    else renderStorageNotice();
+  } catch (error) {
+    renderStorageNotice();
+    console.warn('Cloud account features are unavailable:', error);
+  }
 }
 
 function openIdeaForm(ideaId = null) {
@@ -795,7 +865,12 @@ function handleAction(target) {
   if (!action) return;
   if (action === 'cycle-color-mode') { cycleColorMode(); return; }
   if (action === 'continue-guest') { continueAsGuest(); return; }
-  if (action === 'sign-in') { clerk?.openSignIn({ afterSignInUrl: window.location.href, afterSignUpUrl: window.location.href }); return; }
+  if (action === 'sign-in') {
+    if (storageMode === 'guest' && state) saveGuestState(state);
+    clerk?.openSignIn({ afterSignInUrl: window.location.href, afterSignUpUrl: window.location.href });
+    return;
+  }
+  if (action === 'sync-guest') { moveGuestProjectToCloud(); return; }
   if (action === 'sign-out') { clerk?.signOut(() => location.reload()); return; }
   const v = state ? view() : null;
   if (action === 'browse-project') {
