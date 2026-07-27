@@ -9,7 +9,7 @@ import {
 } from './core.mjs';
 import { modeGlyph, modeLabel, nextMode, normalizeMode, resolveThemeMode } from './theme-mode.mjs';
 import { generateExportMarkdown, stripBoldFromState, parseImportMarkdown } from './export.mjs';
-import { downloadProjectZip, exportProjectDirectory, importProjectDirectory, importProjectFile } from './portable.mjs';
+import { downloadProjectZip, exportProjectDirectory, importProjectDirectory, importProjectFile, projectDocument } from './portable.mjs';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -82,7 +82,6 @@ async function api(path, options = {}) {
     if (path === '/api/status') return { authenticated: false, provisioned: false, open: true, path: 'This browser (not uploaded)', state: structuredClone(guestState) };
     if (path === '/api/state' && (!options.method || options.method === 'GET')) return structuredClone(guestState);
     if (path === '/api/state' && options.method === 'PUT') return saveGuestState(JSON.parse(options.body));
-    if (path === '/api/backup') return { ok: true, local: true };
     if (path.startsWith('/api/attachments')) throw new Error('Attachments in guest mode are not available yet. Sign in to add cloud attachments.');
     return { projects: [] };
   }
@@ -463,7 +462,7 @@ function stripHtml(value = '') {
   return doc.body.textContent || '';
 }
 
-function renderInspector() {
+function renderInspector(resetScroll = false) {
   const workspace = $('.workspace');
   const inspector = $('#inspector');
   const effective = implementationsForTheme();
@@ -496,6 +495,7 @@ function renderInspector() {
     <div class="attachment-list">${(implementation.attachments || []).map((attachment) => `<div class="attachment-row"><a href="${attachment.url}" target="_blank" rel="noopener">${escapeHtml(attachment.name)}</a><button class="link-button" data-action="delete-attachment" data-id="${implementation.id}" data-storage="${escapeHtml(attachment.storageName)}">remove</button></div>`).join('')}</div>
     <label class="field"><span>Add local file</span><input id="attachment-input" type="file" data-implementation-id="${implementation.id}" /></label>
   </section>`;
+  if (resetScroll) inspector.scrollTop = 0;
 }
 
 function renderStats() {
@@ -616,6 +616,60 @@ function openCloudConflictModal() {
   modalManager('Choose project to keep', `<p>Your account already has a cloud project, and this browser also has unsynced work.</p><p class="muted">Nothing will be overwritten until you choose.</p><div class="manager-list"><button class="button primary" data-action="use-cloud-project">Use the existing cloud project</button><button class="button secondary" data-action="replace-cloud-project">Replace cloud with this browser project</button><button class="button ghost" data-action="close-modal">Decide later</button></div>`);
 }
 
+function openProjectMenu() {
+  const accountAction = clerk?.user ? '<button class="button secondary" data-action="open-sign-out-menu">Sign out</button>' : '';
+  modalManager('Project', `<p><strong>${escapeHtml(state.meta.name)}</strong></p><p class="muted">${escapeHtml(projectPath)}</p><div class="manager-list"><button class="button secondary" data-action="open-share-menu">Share project</button><button class="button secondary" data-action="open-export-menu">Export…</button><button class="button secondary" data-action="open-import-menu">Import…</button>${accountAction}<button class="button danger" data-action="close-project">Close project</button></div>`);
+}
+
+function openShareMenu() {
+  modalManager('Share project', `<p>Share a complete portable copy of this project. Recipients can import the file into Ideation Workbench.</p><p class="muted">Sharing a copy does not give access to your private cloud workspace.</p><div class="manager-list"><button class="button primary" data-action="share-project-file">Share project file</button><button class="button secondary" data-action="download-share-project-file">Download project file</button><button class="button ghost" data-action="project-menu">Back</button></div>`);
+}
+
+function openExportMenu() {
+  modalManager('Export project', `<p class="muted">Choose a format for a copy of this project.</p><div class="manager-list"><button class="button primary" data-action="export-project-zip">Portable ZIP</button><button class="button secondary" data-action="export-project-directory">Project directory</button><button class="button secondary" data-action="export-project">Markdown summary</button><button class="button ghost" data-action="project-menu">Back</button></div>`);
+}
+
+function openImportMenu() {
+  modalManager('Import project', `<p class="muted">Import replaces the project currently open in this browser. Your private cloud project is not changed until the next save.</p><div class="manager-list"><button class="button primary" data-action="import-project-portable">Portable ZIP or project file</button><button class="button secondary" data-action="import-project-directory">Project directory</button><button class="button secondary" data-action="import-project">Markdown</button><button class="button ghost" data-action="project-menu">Back</button></div>`);
+}
+
+function openSignOutMenu(removeBrowserCopy) {
+  if (typeof removeBrowserCopy !== 'boolean') {
+    modalManager('Sign out', `<p>What should happen to this browser’s copy of the project?</p><div class="manager-list"><button class="button secondary" data-action="choose-sign-out-copy" data-remove-browser-copy="false">Keep a browser copy</button><button class="button danger" data-action="choose-sign-out-copy" data-remove-browser-copy="true">Remove the browser copy</button><button class="button ghost" data-action="project-menu">Back</button></div>`);
+    return;
+  }
+  const detail = removeBrowserCopy ? 'The browser copy will be removed. Your private cloud project remains safe.' : 'A browser copy will be kept so you can continue locally after signing out.';
+  modalManager('Confirm sign out', `<p>${detail}</p><div class="form-actions"><button class="button ghost" data-action="open-sign-out-menu">Back</button><button class="button danger" data-action="confirm-sign-out" data-remove-browser-copy="${removeBrowserCopy}">Sign out</button></div>`);
+}
+
+function projectShareFile() {
+  const content = JSON.stringify(projectDocument(state), null, 2);
+  return new File([content], `${state.meta.name.replace(/[^a-zA-Z0-9 _-]/g, '_') || 'ideation-project'}.ideation.json`, { type: 'application/json' });
+}
+
+function downloadShareProjectFile() {
+  const file = projectShareFile();
+  const url = URL.createObjectURL(file);
+  const link = document.createElement('a');
+  link.href = url; link.download = file.name; link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function shareProjectFile() {
+  const file = projectShareFile();
+  if (!navigator.share || !navigator.canShare?.({ files: [file] })) {
+    downloadShareProjectFile();
+    showToast('Project file downloaded. Send it to the person you want to share with.');
+    return;
+  }
+  try {
+    await navigator.share({ title: state.meta.name, text: 'Ideation Workbench project', files: [file] });
+    showToast('Project shared.');
+  } catch (error) {
+    if (error?.name !== 'AbortError') showToast(`Could not share the project: ${error.message}`);
+  }
+}
+
 function signOutAndReturnToBrowser({ removeBrowserCopy = false } = {}) {
   if (!clerk) return;
   if (state && !removeBrowserCopy) saveGuestState(state);
@@ -655,7 +709,7 @@ function renderAccountControl() {
   const button = $('#account-button');
   if (!button) return;
   const signedIn = Boolean(clerk?.user);
-  button.dataset.action = signedIn ? 'sign-out' : 'sign-in';
+  button.dataset.action = signedIn ? 'open-sign-out-menu' : 'sign-in';
   button.textContent = signedIn ? 'Sign out' : 'Sign in';
 }
 
@@ -1006,8 +1060,10 @@ function handleAction(target) {
   }
   if (action === 'sync-guest') { moveGuestProjectToCloud(); return; }
   if (action === 'resolve-cloud-conflict') { openCloudConflictModal(); return; }
-  if (action === 'sign-out') { signOutAndReturnToBrowser(); return; }
-  if (action === 'sign-out-and-remove-browser-copy') { signOutAndReturnToBrowser({ removeBrowserCopy: true }); return; }
+  if (action === 'sign-out') { openSignOutMenu(); return; }
+  if (action === 'open-sign-out-menu') { openSignOutMenu(); return; }
+  if (action === 'choose-sign-out-copy') { openSignOutMenu(target.dataset.removeBrowserCopy === 'true'); return; }
+  if (action === 'confirm-sign-out') { signOutAndReturnToBrowser({ removeBrowserCopy: target.dataset.removeBrowserCopy === 'true' }); return; }
   if (!state) { showToast('The workbench has not finished starting. Please reload this page.'); return; }
   const v = state ? view() : null;
   if (action === 'browse-project') {
@@ -1051,7 +1107,7 @@ function handleAction(target) {
     render(); markDirty();
   }
   else if (action === 'clear-locks') { v.lockedImplementationIds = []; render(); markDirty(); }
-  else if (action === 'open-inspector') { currentInspectorId = itemId; renderInspector(); }
+  else if (action === 'open-inspector') { currentInspectorId = itemId; renderInspector(true); }
   else if (action === 'focus-conflict') { focusedConflictId = itemId; closeModal(); render(); }
   else if (action === 'clear-conflict-focus') { focusedConflictId = null; renderBoard(); }
   else if (action === 'choose-theme') openThemePicker();
@@ -1089,7 +1145,11 @@ function handleAction(target) {
   else if (action === 'save-current-view') { closeModal(); openSaveViewForm(); }
   else if (action === 'load-view') loadSavedView(itemId);
   else if (action === 'delete-view') { state.savedViews = state.savedViews.filter((item) => item.id !== itemId); markDirty(); openSavesManager(); }
-  else if (action === 'backup') { downloadProjectZip(state); showToast('Portable backup downloaded.'); }
+  else if (action === 'open-share-menu') openShareMenu();
+  else if (action === 'share-project-file') shareProjectFile();
+  else if (action === 'download-share-project-file') { downloadShareProjectFile(); showToast('Shareable project file downloaded.'); }
+  else if (action === 'open-export-menu') openExportMenu();
+  else if (action === 'open-import-menu') openImportMenu();
   else if (action === 'export-project-zip') {
     closeModal(); downloadProjectZip(state); showToast('Portable ZIP exported.');
   }
@@ -1116,10 +1176,7 @@ function handleAction(target) {
     URL.revokeObjectURL(url);
     showToast('Project exported as markdown.');
   }
-  else if (action === 'project-menu') {
-    const accountActions = clerk?.user ? `<button class="button secondary" data-action="sign-out">Sign out and keep this browser copy</button><button class="button danger" data-action="sign-out-and-remove-browser-copy">Sign out and remove this browser copy</button>` : '';
-    modalManager('Project', `<p><strong>${escapeHtml(state.meta.name)}</strong></p><p class="muted">${escapeHtml(projectPath)}</p><div class="manager-list"><button class="button secondary" data-action="export-project-zip">Export portable ZIP</button><button class="button secondary" data-action="export-project-directory">Export project directory</button><button class="button secondary" data-action="import-project-portable">Import project ZIP or JSON</button><button class="button secondary" data-action="import-project-directory">Import project directory</button><button class="button secondary" data-action="export-project">Export as markdown</button><button class="button secondary" data-action="import-project">Import markdown</button><button class="button secondary" data-action="backup">Create backup now</button>${accountActions}<button class="button danger" data-action="close-project">Close project</button></div>`);
-  }
+  else if (action === 'project-menu') openProjectMenu();
   else if (action === 'import-project') {
     const input = document.createElement('input');
     input.type = 'file';
