@@ -40,12 +40,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: Apply D1 migrations
+        run: npx wrangler d1 migrations apply ideation-workbench --remote
+      - name: Create or update Worker
+        run: npx wrangler deploy
       - name: Set Worker runtime secrets
         run: |
           printf '%s' "$CLERK_PUBLISHABLE_KEY" | npx wrangler secret put CLERK_PUBLISHABLE_KEY
           printf '%s' "$CLERK_SECRET_KEY" | npx wrangler secret put CLERK_SECRET_KEY
           printf '%s' "$CLERK_WEBHOOK_SIGNING_SECRET" | npx wrangler secret put CLERK_WEBHOOK_SIGNING_SECRET
-      - name: Apply D1 migrations
-        run: npx wrangler d1 migrations apply ideation-workbench --remote
-      - name: Deploy Worker
+      - name: Deploy configured Worker
         run: npx wrangler deploy
