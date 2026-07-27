@@ -583,6 +583,7 @@ async function boot() {
     else renderStorageNotice();
   } catch (error) {
     authenticationError = error.message || 'Authentication could not be initialized.';
+    clerk = null;
     renderStorageNotice();
     console.warn('Cloud account features are unavailable:', error);
   }
