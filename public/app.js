@@ -13,6 +13,7 @@ import { modeGlyph, modeLabel, nextMode, normalizeMode, resolveThemeMode } from 
 import { generateExportMarkdown, stripBoldFromState, parseImportMarkdown } from './export.mjs';
 import { downloadProjectZip, exportProjectDirectory, importProjectDirectory, importProjectFile } from './portable.mjs';
 import { ideaOrder, implementationOrder, implementationOrderForIdea } from './reorder.mjs';
+import { allPairs, fuzzyMatches, requirementEdges, validRequirementChains } from './relationships.mjs';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -38,6 +39,8 @@ let cloudWorkspaceReady = false;
 let authenticationError = '';
 let pendingCloudConflict = null;
 let activeDrag = null;
+let relationshipDraft = null;
+let requirementBuilder = null;
 const GUEST_STORAGE_KEY = 'ideation-workbench:guest-state:v1';
 const GUEST_BACKUP_KEY = 'ideation-workbench:guest-backup-before-cloud:v1';
 
@@ -340,7 +343,8 @@ function openThemePicker() {
 }
 
 function openCreateMenu() {
-  modalManager('Create', `<div class="manager-list create-menu"><button class="button primary" data-action="create-idea">Idea</button><button class="button primary" data-action="create-implementation">Implementation</button><button class="button secondary" data-action="create-theme">Theme</button><button class="button secondary" data-action="create-idea-group">Idea group</button><button class="button secondary" data-action="create-implementation-group">Implementation group</button></div>`);
+  const selected = view().lockedImplementationIds.filter((id) => byId(state.implementations, id));
+  modalManager('Create', `<div class="manager-list create-menu"><button class="button primary" data-action="create-idea">Idea</button><button class="button primary" data-action="create-implementation">Implementation</button>${selected.length > 1 ? `<button class="button secondary" data-action="open-relationship-flow">Conflict / requirement</button>` : ''}<button class="button secondary" data-action="create-theme">Theme</button><button class="button secondary" data-action="create-idea-group">Idea group</button><button class="button secondary" data-action="create-implementation-group">Implementation group</button><button class="button ghost" data-action="manage-conflicts">Conflicts</button><button class="button ghost" data-action="manage-requirements">Requirements</button></div>`);
 }
 
 function renderFilters() {
@@ -1047,6 +1051,82 @@ function openRequirementsManager() {
   modalManager('Requirements', `<div class="manager-heading"><p class="callout">A → B means choosing A also chooses B. Add reverse edges for bidirectional requirements; cycles and chains are valid.</p><button class="button primary" data-action="add-requirement">+ Requirement</button></div><div class="manager-list">${rows || '<p class="muted">No requirements yet.</p>'}</div>`);
 }
 
+function relationshipPicker(selectedIds, showAll, query, actionPrefix) {
+  const selected = new Set(selectedIds);
+  const selectedItems = state.implementations.filter((item) => selected.has(item.id));
+  const additional = state.implementations.filter((item) => !selected.has(item.id) && fuzzyMatches(item.title, query));
+  const option = (item) => `<button class="relationship-option ${selected.has(item.id) ? 'selected' : ''}" data-action="${actionPrefix}-toggle" data-id="${item.id}">${escapeHtml(item.title)}</button>`;
+  return `<div class="relationship-picker"><div class="relationship-selected">${selectedItems.map(option).join('') || '<span class="muted tiny">No implementations selected.</span>'}</div><button class="relationship-more" data-action="${actionPrefix}-more">⌄ Other implementations</button>${showAll ? `<input class="relationship-search" data-relationship-search="${actionPrefix}" placeholder="Search implementations…" value="${escapeHtml(query)}" autofocus /><div class="relationship-options">${additional.map(option).join('') || '<span class="muted tiny">No matching implementations.</span>'}</div>` : ''}</div>`;
+}
+
+function openRelationshipFlow() {
+  const selected = view().lockedImplementationIds.filter((id) => byId(state.implementations, id));
+  if (selected.length < 2) { showToast('Lock at least two implementations first.'); return; }
+  relationshipDraft = { selected, showAll: false, query: '', conflictMenuOpen: false, screen: 'flow' };
+  renderRelationshipFlow();
+}
+
+function renderRelationshipFlow() {
+  if (!relationshipDraft) return;
+  relationshipDraft.screen = 'flow';
+  const selected = relationshipDraft.selected;
+  modalManager('Conflict / requirement', `<p class="muted">${selected.length} implementations selected.</p>${relationshipPicker(selected, relationshipDraft.showAll, relationshipDraft.query, 'relationship')}<div class="relationship-actions"><div class="split-button"><button class="button danger" data-action="mark-selected-conflict" data-conflict-mode="all" ${selected.length < 2 ? 'disabled' : ''}>Mark conflict</button><button class="button danger split-chevron" data-action="toggle-conflict-menu" aria-label="Conflict options">⌄</button><div class="split-menu" ${relationshipDraft.conflictMenuOpen ? '' : 'hidden'}><button data-action="mark-selected-conflict" data-conflict-mode="all">All</button><button data-action="mark-selected-conflict" data-conflict-mode="any">Any</button><button data-action="open-more-conflict">More…</button></div></div><button class="button primary" data-action="open-requirement-builder" ${selected.length < 2 ? 'disabled' : ''}>Build requirements</button></div><p class="tiny muted">All creates one multiway conflict. Any creates every pair. More lets you refine the selected set.</p>`);
+}
+
+function openMoreConflict() {
+  if (!relationshipDraft) return;
+  relationshipDraft.screen = 'more';
+  relationshipDraft.conflictMenuOpen = false;
+  modalManager('Choose conflict members', `<p class="muted">Choose at least two implementations for this conflict.</p>${relationshipPicker(relationshipDraft.selected, relationshipDraft.showAll, relationshipDraft.query, 'relationship')}<div class="form-actions"><button class="button ghost" data-action="relationship-back">Back</button><button class="button danger" data-action="mark-selected-conflict" data-conflict-mode="more" ${relationshipDraft.selected.length < 2 ? 'disabled' : ''}>Add conflict</button></div>`);
+}
+
+function openSelectedConflictDetails(ids, returnToFlow = true) {
+  const titles = ids.map((itemId) => byId(state.implementations, itemId)?.title || 'Implementation');
+  modalForm('Conflict details', `<div class="form-grid"><label class="field full"><span>Name <small>(optional)</small></span><input name="name" value="${escapeHtml(titles.join(' + '))}" /></label><label class="field full"><span>Explanation <small>(optional)</small></span>${richEditor('', 'Why is this combination invalid?')}</label></div>`, async (form) => {
+    const data = new FormData(form); const name = String(data.get('name') || '').trim() || titles.join(' + ');
+    state.conflicts.push({ id: id(), name, detailsHtml: getRichValue(), themeId: state.activeThemeId, implementationIds: ids, overridesConflictId: null });
+    view().lockedImplementationIds = view().lockedImplementationIds.filter((itemId) => !ids.includes(itemId));
+    closeModal(); render(); markDirty();
+    if (returnToFlow) openRelationshipFlow();
+  });
+}
+
+function markSelectedConflict(mode) {
+  if (!relationshipDraft?.selected?.length || relationshipDraft.selected.length < 2) return;
+  const selected = relationshipDraft.selected;
+  if (mode === 'any') {
+    for (const pair of allPairs(selected)) state.conflicts.push({ id: id(), name: pair.map((itemId) => byId(state.implementations, itemId)?.title || 'Implementation').join(' ↔ '), detailsHtml: '', themeId: state.activeThemeId, implementationIds: pair, overridesConflictId: null });
+    view().lockedImplementationIds = view().lockedImplementationIds.filter((itemId) => !selected.includes(itemId));
+    closeModal(); render(); markDirty(); openRelationshipFlow();
+    return;
+  }
+  openSelectedConflictDetails(selected);
+}
+
+function openRequirementBuilder() {
+  if (!relationshipDraft) return;
+  requirementBuilder = { selected: [...relationshipDraft.selected], showAll: false, query: '', chains: [{ from: [], to: [] }] };
+  renderRequirementBuilder();
+}
+
+function renderRequirementBuilder() {
+  if (!requirementBuilder) return;
+  const selected = requirementBuilder.selected;
+  const chains = requirementBuilder.chains;
+  const chain = (item, index) => `<div class="requirement-chain"><div class="requirement-box">${item.from.map((id) => `<span>${escapeHtml(byId(state.implementations, id)?.title || 'Missing')}</span>`).join('') || '<span class="muted">[]</span>'}<button data-action="builder-add-from" data-index="${index}" ${selected.length ? '' : 'disabled'}>Add</button></div><strong>⇒</strong><div class="requirement-box">${item.to.map((id) => `<span>${escapeHtml(byId(state.implementations, id)?.title || 'Missing')}</span>`).join('') || '<span class="muted">[]</span>'}<button data-action="builder-add-to" data-index="${index}" ${selected.length ? '' : 'disabled'}>Add</button></div></div>`;
+  const valid = validRequirementChains(chains);
+  modalManager('Build requirements', `<p class="muted">Select implementations, then add them to the left (requires) or right (required) side. Each row creates every left-to-right relationship.</p>${relationshipPicker(selected, requirementBuilder.showAll, requirementBuilder.query, 'builder')}<div class="requirement-chains">${chains.map(chain).join('')}</div><div class="form-actions"><button class="button ghost" data-action="relationship-back">Back</button><button class="button secondary" data-action="builder-add-chain" ${chains.length >= 5 ? 'disabled' : ''}>+ Chain</button><button class="button primary" data-action="save-requirement-builder" ${valid.length ? '' : 'disabled'}>Save requirements</button></div>`);
+}
+
+function saveRequirementBuilder() {
+  const edges = requirementEdges(validRequirementChains(requirementBuilder?.chains || []));
+  if (!edges.length) { showToast('Add at least one implementation on both sides of a requirement.'); return; }
+  const existing = new Set(requirements().map((item) => `${item.fromImplementationId}:${item.toImplementationId}`));
+  for (const edge of edges) if (!existing.has(`${edge.fromImplementationId}:${edge.toImplementationId}`)) requirements().push({ id: id(), ...edge });
+  view().lockedImplementationIds = [];
+  requirementBuilder = null; closeModal(); render(); markDirty(); openRelationshipFlow();
+}
+
 function captureRichView() {
   return structuredClone(view());
 }
@@ -1200,6 +1280,20 @@ function handleAction(target) {
   else if (action === 'open-included-project') openIncludedProject();
   else if (action === 'close-modal') closeModal();
   else if (action === 'create-menu') openCreateMenu();
+  else if (action === 'open-relationship-flow') openRelationshipFlow();
+  else if (action === 'relationship-toggle') { relationshipDraft.selected = relationshipDraft.selected.includes(itemId) ? relationshipDraft.selected.filter((id) => id !== itemId) : [...relationshipDraft.selected, itemId]; relationshipDraft.screen === 'more' ? openMoreConflict() : renderRelationshipFlow(); }
+  else if (action === 'relationship-more') { relationshipDraft.showAll = !relationshipDraft.showAll; relationshipDraft.screen === 'more' ? openMoreConflict() : renderRelationshipFlow(); }
+  else if (action === 'toggle-conflict-menu') { relationshipDraft.conflictMenuOpen = !relationshipDraft.conflictMenuOpen; renderRelationshipFlow(); }
+  else if (action === 'mark-selected-conflict') markSelectedConflict(target.dataset.conflictMode);
+  else if (action === 'open-more-conflict') openMoreConflict();
+  else if (action === 'relationship-back') renderRelationshipFlow();
+  else if (action === 'open-requirement-builder') openRequirementBuilder();
+  else if (action === 'builder-toggle') { requirementBuilder.selected = requirementBuilder.selected.includes(itemId) ? requirementBuilder.selected.filter((id) => id !== itemId) : [...requirementBuilder.selected, itemId]; renderRequirementBuilder(); }
+  else if (action === 'builder-more') { requirementBuilder.showAll = !requirementBuilder.showAll; renderRequirementBuilder(); }
+  else if (action === 'builder-add-from') { requirementBuilder.chains[Number(target.dataset.index)].from = unique([...requirementBuilder.chains[Number(target.dataset.index)].from, ...requirementBuilder.selected]); requirementBuilder.selected = []; renderRequirementBuilder(); }
+  else if (action === 'builder-add-to') { requirementBuilder.chains[Number(target.dataset.index)].to = unique([...requirementBuilder.chains[Number(target.dataset.index)].to, ...requirementBuilder.selected]); requirementBuilder.selected = []; renderRequirementBuilder(); }
+  else if (action === 'builder-add-chain') { if (requirementBuilder.chains.length < 5) requirementBuilder.chains.push({ from: [], to: [] }); renderRequirementBuilder(); }
+  else if (action === 'save-requirement-builder') saveRequirementBuilder();
   else if (action === 'create-idea') { closeModal(); openIdeaForm(); }
   else if (action === 'create-implementation') { closeModal(); openImplementationForm(); }
   else if (action === 'create-theme') { closeModal(); openThemeForm(null, false); }
@@ -1405,6 +1499,11 @@ $('#inspector').addEventListener('submit', (event) => {
   render(); markDirty();
 });
 $('#inspector').addEventListener('change', (event) => { if (event.target.id === 'attachment-input') uploadAttachment(event.target); });
+modal.addEventListener('input', (event) => {
+  const kind = event.target.dataset.relationshipSearch;
+  if (kind === 'relationship' && relationshipDraft) { relationshipDraft.query = event.target.value; relationshipDraft.screen === 'more' ? openMoreConflict() : renderRelationshipFlow(); }
+  if (kind === 'builder' && requirementBuilder) { requirementBuilder.query = event.target.value; renderRequirementBuilder(); }
+});
 $('#board').addEventListener('pointerdown', beginBoardPointer);
 document.addEventListener('pointermove', moveBoardDrag, { passive: false });
 document.addEventListener('pointerup', (event) => finishBoardDrag(event));
