@@ -9,7 +9,6 @@ import {
 } from './core.mjs';
 import { modeGlyph, modeLabel, nextMode, normalizeMode, resolveThemeMode } from './theme-mode.mjs';
 import { generateExportMarkdown, stripBoldFromState, parseImportMarkdown } from './export.mjs';
-import { Clerk } from '@clerk/clerk-js';
 import { downloadProjectZip, exportProjectDirectory, importProjectDirectory, importProjectFile } from './portable.mjs';
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -554,6 +553,9 @@ async function moveGuestProjectToCloud() {
 async function initializeClerk() {
   const config = await fetch('/api/config').then((response) => response.json());
   if (!config.clerkPublishableKey) throw new Error('Authentication is not configured yet.');
+  // Keep the core workbench independent from the optional auth client. A Clerk
+  // configuration error must never stop local projects or their controls.
+  const { Clerk } = await import('@clerk/clerk-js');
   clerk = new Clerk(config.clerkPublishableKey);
   await clerk.load({ afterSignInUrl: window.location.href, afterSignUpUrl: window.location.href });
   $('#sign-out-button').hidden = !clerk.user;
