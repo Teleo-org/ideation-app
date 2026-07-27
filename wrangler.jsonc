@@ -5,6 +5,9 @@
   "compatibility_date": "2026-07-27",
   "compatibility_flags": ["nodejs_compat"],
   "assets": { "directory": "./build", "binding": "ASSETS" },
+  "routes": [
+    { "pattern": "ideation.teleoflexuous.com", "custom_domain": true }
+  ],
   "vars": {
     "APP_ORIGIN": "https://ideation.teleoflexuous.com"
   },
