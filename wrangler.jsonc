@@ -9,7 +9,7 @@
     "APP_ORIGIN": "https://ideation.teleoflexuous.com"
   },
   "d1_databases": [
-    { "binding": "DB", "database_name": "ideation-workbench", "database_id": "REPLACE_DURING_PROVISIONING", "migrations_dir": "migrations" }
+    { "binding": "DB", "database_name": "ideation-workbench", "database_id": "0f2ebdc8-b3f2-4453-b959-fd01c4745c4b", "migrations_dir": "migrations" }
   ],
   "r2_buckets": [
     { "binding": "ATTACHMENTS", "bucket_name": "ideation-workbench-attachments" }

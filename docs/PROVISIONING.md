@@ -31,7 +31,7 @@ Provide a scoped API token and account ID. The token must allow only this accoun
 
 - create and edit Workers;
 - create and edit the Ideation D1 database;
-- create and edit the private Ideation R2 bucket;
+- create and edit the private Ideation R2 bucket (**Workers R2 Storage Read/Write must be scoped to the entire Cloudflare account; R2 buckets are not zone resources**);
 - edit DNS/custom-domain records for `ideation.teleoflexuous.com` and read the zone.
 
 The deployment creates the Worker, D1 database, and R2 bucket. Cloudflare-managed custom-domain TLS is used for `ideation.teleoflexuous.com`.
