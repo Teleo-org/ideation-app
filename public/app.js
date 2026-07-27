@@ -903,9 +903,11 @@ function handleAction(target) {
       return;
     }
     try {
-      Promise.resolve(clerk.openSignIn({ afterSignInUrl: window.location.href, afterSignUpUrl: window.location.href }))
+      // Redirecting does not require Clerk's optional in-page UI bundle. This
+      // also lets a brand-new production instance complete its first-user flow.
+      Promise.resolve(clerk.redirectToSignIn({ returnBackUrl: window.location.href }))
         .catch((error) => showToast(`Sign-in is unavailable: ${error.message}`));
-      showToast('Opening sign-in…');
+      showToast('Redirecting to sign-in…');
     } catch (error) { showToast(`Sign-in is unavailable: ${error.message}`); }
     return;
   }
