@@ -226,6 +226,7 @@ a { color: var(--primary-dark); }
 .theme-picker-button > span:last-child { flex: 0 0 auto; display: grid; place-items: center; width: 12px; line-height: 1; }
 .top-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
 .create-button { min-width: 40px; padding-inline: 11px; font-size: 20px; line-height: 1; }
+.lock-selected-button { white-space: nowrap; }
 .theme-choice { width: 100%; text-align: left; cursor: pointer; }
 .theme-choice.selected-theme { border-color: var(--primary); background: var(--primary-tint-bg); }
 .button { min-height: 38px; padding: 8px 13px; border: 1px solid transparent; border-radius: 10px; font-weight: 750; transition: .15s ease; }
@@ -394,8 +395,8 @@ a { color: var(--primary-dark); }
   .theme-control { grid-column: 1; }
   .theme-picker-button { width: 100%; max-width: min(240px, calc(100vw - 70px)); }
   .top-actions { grid-column: 2; }
-  .top-actions .button:not(.create-button):not(#account-button):not(.relationship-button) { display: none; }
-  .relationship-button { min-height: 34px; padding-inline: 8px; font-size: 11px; white-space: nowrap; }
+  .top-actions .button:not(.create-button):not(#account-button):not(.relationship-button):not(.lock-selected-button) { display: none; }
+  .relationship-button, .lock-selected-button { min-height: 34px; padding-inline: 8px; font-size: 11px; white-space: nowrap; }
   .filterbar { overflow-x: auto; }
   .workspace, .workspace.has-inspector { grid-template-columns: 1fr; }
   .workspace.has-inspector { grid-template-rows: minmax(0, 1fr) auto; }
