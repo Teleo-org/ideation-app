@@ -2,10 +2,12 @@ import {
   blendBackground,
   blockingConflicts,
   effectiveConflicts,
+  lockWithRequirements,
   effectiveImplementations,
-  normalizeLocked,
+  normalizeLockedWithRequirements,
   readableTextColor,
   themeChain,
+  unlockRequirementDependents,
 } from './core.mjs';
 import { modeGlyph, modeLabel, nextMode, normalizeMode, resolveThemeMode } from './theme-mode.mjs';
 import { generateExportMarkdown, stripBoldFromState, parseImportMarkdown } from './export.mjs';
@@ -42,7 +44,7 @@ const GUEST_BACKUP_KEY = 'ideation-workbench:guest-backup-before-cloud:v1';
 function guestDefaultState(name = 'My Ideation Project') {
   const themeId = id();
   const stamp = new Date().toISOString();
-  return { version: 1, meta: { id: id(), name, createdAt: stamp, updatedAt: stamp }, themes: [{ id: themeId, name: 'Core', parentId: null, hiddenInheritedImplementationIds: [], hiddenInheritedConflictIds: [] }], ideaGroups: [], implementationGroups: [], ideas: [], implementations: [], groupLinks: [], conflicts: [], savedViews: [], uiByTheme: { [themeId]: defaultView() }, activeThemeId: themeId };
+  return { version: 1, meta: { id: id(), name, createdAt: stamp, updatedAt: stamp }, themes: [{ id: themeId, name: 'Core', parentId: null, hiddenInheritedImplementationIds: [], hiddenInheritedConflictIds: [] }], ideaGroups: [], implementationGroups: [], ideas: [], implementations: [], groupLinks: [], conflicts: [], requirements: [], savedViews: [], uiByTheme: { [themeId]: defaultView() }, activeThemeId: themeId };
 }
 
 function readGuestState() {
@@ -171,6 +173,7 @@ function themeName(themeId) { return byId(state.themes, themeId)?.name || 'Unkno
 function activeTheme() { return byId(state.themes, state.activeThemeId); }
 function conflictsForTheme() { return effectiveConflicts(state, state.activeThemeId); }
 function implementationsForTheme() { return effectiveImplementations(state, state.activeThemeId); }
+function requirements() { return state.requirements ||= []; }
 
 function showToast(message) {
   toast.textContent = message;
@@ -208,7 +211,7 @@ function syncViewWithTheme(target) {
     ...newlyEffective,
   ]);
   target.previousVisibleImplementationIds = (target.previousVisibleImplementationIds || []).filter((itemId) => effectiveSet.has(itemId));
-  target.lockedImplementationIds = normalizeLocked(conflictsForTheme(), (target.lockedImplementationIds || []).filter((itemId) => effectiveSet.has(itemId)));
+  target.lockedImplementationIds = normalizeLockedWithRequirements(conflictsForTheme(), requirements(), (target.lockedImplementationIds || []).filter((itemId) => effectiveSet.has(itemId)), effectiveIds);
   target.expandedImplementationIds = (target.expandedImplementationIds || []).filter((itemId) => effectiveSet.has(itemId));
   target.knownImplementationIds = effectiveIds;
 }
@@ -356,8 +359,12 @@ function ideaCardStyle(idea) {
 
 function implementationBadges(implementation, blockers, conflicts, directInTheme) {
   const badges = [];
+  const outgoing = requirements().filter((requirement) => requirement.fromImplementationId === implementation.id);
+  const incoming = requirements().filter((requirement) => requirement.toImplementationId === implementation.id);
   if (!directInTheme) badges.push(`<span class="micro-badge">Inherited</span>`);
   if (implementation.groupIds.length) badges.push(`<span class="micro-badge">${implementation.groupIds.length} impl group${implementation.groupIds.length === 1 ? '' : 's'}</span>`);
+  if (outgoing.length) badges.push(`<span class="micro-badge">Requires ${outgoing.length}</span>`);
+  if (incoming.length) badges.push(`<span class="micro-badge">Required by ${incoming.length}</span>`);
   if (blockers.length) badges.push(`<span class="micro-badge warning">${blockers.length} blocking conflict${blockers.length === 1 ? '' : 's'}</span>`);
   for (const conflict of conflicts.slice(0, 3)) badges.push(`<button class="micro-badge conflict" data-action="focus-conflict" data-id="${conflict.id}" title="${escapeHtml(conflict.name)}">${escapeHtml(conflict.name)}</button>`);
   if (conflicts.length > 3) badges.push(`<span class="micro-badge">+${conflicts.length - 3}</span>`);
@@ -366,7 +373,10 @@ function implementationBadges(implementation, blockers, conflicts, directInTheme
 
 function renderImplementationRow(implementation, allConflicts, v) {
   const locked = v.lockedImplementationIds.includes(implementation.id);
-  const blockers = locked ? [] : blockingConflicts(allConflicts, v.lockedImplementationIds, implementation.id);
+  const proposal = locked ? null : lockWithRequirements(allConflicts, requirements(), v.lockedImplementationIds, implementation.id, implementationsForTheme().map((item) => item.id));
+  const blockers = locked ? [] : unique([...blockingConflicts(allConflicts, v.lockedImplementationIds, implementation.id), ...(proposal?.completedConflicts || [])]);
+  const missingRequirements = proposal?.missingIds || [];
+  const cannotLock = Boolean(blockers.length || missingRequirements.length);
   if (blockers.length && !v.showExcluded) return '';
   const relatedConflicts = allConflicts.filter((conflict) => conflict.implementationIds.includes(implementation.id));
   const expanded = v.expandedImplementationIds.includes(implementation.id);
@@ -374,7 +384,7 @@ function renderImplementationRow(implementation, allConflicts, v) {
   const focused = focusedConflictId ? byId(allConflicts, focusedConflictId) : null;
   const focusClass = focusedConflictId ? (focused?.implementationIds.includes(implementation.id) ? 'conflict-member' : 'conflict-muted') : '';
   return `<article class="impl-row ${locked ? 'locked' : ''} ${selected ? 'selected' : ''} ${blockers.length ? 'incompatible' : ''} ${focusClass}" data-implementation-id="${implementation.id}">
-    <button class="lock-button ${locked ? 'active' : ''}" data-action="toggle-lock" data-id="${implementation.id}" ${blockers.length ? 'disabled' : ''} title="${locked ? 'Unlock' : blockers.length ? 'Would complete a conflict' : 'Lock'}">${locked ? '✓' : '○'}</button>
+    <button class="lock-button ${locked ? 'active' : ''}" data-action="toggle-lock" data-id="${implementation.id}" ${cannotLock ? 'disabled' : ''} title="${locked ? 'Unlock' : blockers.length ? 'Would complete a conflict' : missingRequirements.length ? 'Requires an implementation unavailable in this theme' : 'Lock'}">${locked ? '✓' : '○'}</button>
     <div class="impl-main">
       <button class="impl-title-button" data-action="open-inspector" data-id="${implementation.id}">${escapeHtml(implementation.title)}</button>
       <div class="impl-subline">${implementationBadges(implementation, blockers, relatedConflicts, implementation.directInTheme)}</div>
@@ -1015,6 +1025,34 @@ function openConflictManager() {
   modalManager(`Conflicts in ${activeTheme().name}`, `<div class="manager-heading"><p class="callout">A conflict set becomes invalid only when every member is locked. Subsets remain valid.</p><button class="button primary" data-action="add-conflict">+ Conflict</button></div><div class="manager-list">${rows || '<p class="muted">No conflicts apply to this theme.</p>'}</div>${hiddenRows ? `<section class="manager-section"><h3>Hidden inherited conflicts</h3><div class="manager-list">${hiddenRows}</div></section>` : ''}`);
 }
 
+function openRequirementForm(requirementId = null) {
+  const requirement = requirementId ? byId(requirements(), requirementId) : null;
+  if (state.implementations.length < 2) { showToast('Create at least two implementations first.'); return; }
+  modalForm(requirement ? 'Edit requirement' : 'Add requirement', `
+    <div class="form-grid"><label class="field full"><span>When this implementation is locked…</span><select name="fromImplementationId">${state.implementations.map((implementation) => `<option value="${implementation.id}" ${requirement?.fromImplementationId === implementation.id ? 'selected' : ''}>${escapeHtml(implementation.title)}</option>`).join('')}</select></label>
+    <label class="field full"><span>…this implementation must also be locked</span><select name="toImplementationId">${state.implementations.map((implementation) => `<option value="${implementation.id}" ${requirement?.toImplementationId === implementation.id ? 'selected' : ''}>${escapeHtml(implementation.title)}</option>`).join('')}</select></label>
+    <p class="callout full">Requirements are directional. Add both directions for a bidirectional requirement; cycles and multistep chains are supported.</p></div>
+  `, async (form) => {
+    const data = new FormData(form);
+    const fromImplementationId = String(data.get('fromImplementationId'));
+    const toImplementationId = String(data.get('toImplementationId'));
+    if (fromImplementationId === toImplementationId) throw new Error('Choose two different implementations.');
+    if (requirements().some((item) => item.id !== requirement?.id && item.fromImplementationId === fromImplementationId && item.toImplementationId === toImplementationId)) throw new Error('That directional requirement already exists.');
+    const payload = { id: requirement?.id || id(), fromImplementationId, toImplementationId };
+    if (requirement) Object.assign(requirement, payload); else requirements().push(payload);
+    closeModal(); render(); markDirty(); openRequirementsManager();
+  });
+}
+
+function openRequirementsManager() {
+  const rows = requirements().map((requirement) => {
+    const from = byId(state.implementations, requirement.fromImplementationId);
+    const to = byId(state.implementations, requirement.toImplementationId);
+    return `<div class="manager-row"><div><strong>${escapeHtml(from?.title || 'Missing implementation')} → ${escapeHtml(to?.title || 'Missing implementation')}</strong><div class="tiny muted">Locking the first automatically locks the second.</div></div><div class="manager-row-actions"><button class="button ghost" data-action="edit-requirement" data-id="${requirement.id}">Edit</button><button class="button danger" data-action="delete-requirement" data-id="${requirement.id}">Delete</button></div></div>`;
+  }).join('');
+  modalManager('Requirements', `<div class="manager-heading"><p class="callout">A → B means choosing A also chooses B. Add reverse edges for bidirectional requirements; cycles and chains are valid.</p><button class="button primary" data-action="add-requirement">+ Requirement</button></div><div class="manager-list">${rows || '<p class="muted">No requirements yet.</p>'}</div>`);
+}
+
 function captureRichView() {
   return structuredClone(view());
 }
@@ -1053,6 +1091,7 @@ function removeImplementation(implementationId, ask = true) {
   if (!implementation || (ask && !confirm(`Delete “${implementation.title}” everywhere?`))) return false;
   state.implementations = state.implementations.filter((item) => item.id !== implementationId);
   state.conflicts = state.conflicts.map((conflict) => ({ ...conflict, implementationIds: conflict.implementationIds.filter((id) => id !== implementationId) })).filter((conflict) => conflict.implementationIds.length >= 2);
+  state.requirements = requirements().filter((requirement) => requirement.fromImplementationId !== implementationId && requirement.toImplementationId !== implementationId);
   state.savedViews.forEach((saved) => { saved.lockedImplementationIds = saved.lockedImplementationIds.filter((id) => id !== implementationId); if (saved.richView) saved.richView.lockedImplementationIds = saved.richView.lockedImplementationIds.filter((id) => id !== implementationId); });
   Object.values(state.uiByTheme).forEach((item) => {
     for (const key of ['lockedImplementationIds', 'visibleImplementationIds', 'previousVisibleImplementationIds', 'expandedImplementationIds', 'knownImplementationIds']) item[key] = (item[key] || []).filter((id) => id !== implementationId);
@@ -1101,7 +1140,7 @@ function loadSavedView(savedId) {
   if (!saved) return;
   state.activeThemeId = saved.themeId;
   if (saved.kind === 'rich' && saved.richView) state.uiByTheme[saved.themeId] = structuredClone(saved.richView);
-  else view().lockedImplementationIds = normalizeLocked(conflictsForTheme(), saved.lockedImplementationIds);
+  else view().lockedImplementationIds = normalizeLockedWithRequirements(conflictsForTheme(), requirements(), saved.lockedImplementationIds, implementationsForTheme().map((item) => item.id));
   focusedConflictId = null; currentInspectorId = null;
   closeModal(); render(); markDirty();
 }
@@ -1186,8 +1225,13 @@ function handleAction(target) {
   else if (action === 'hide-all') { v.previousVisibleImplementationIds = [...v.visibleImplementationIds]; v.visibleImplementationIds = []; render(); markDirty(); }
   else if (action === 'restore-visible') { const previous = [...v.previousVisibleImplementationIds]; v.previousVisibleImplementationIds = [...v.visibleImplementationIds]; v.visibleImplementationIds = previous; render(); markDirty(); }
   else if (action === 'toggle-lock') {
-    if (v.lockedImplementationIds.includes(itemId)) v.lockedImplementationIds = v.lockedImplementationIds.filter((id) => id !== itemId);
-    else if (!blockingConflicts(conflictsForTheme(), v.lockedImplementationIds, itemId).length) v.lockedImplementationIds.push(itemId);
+    if (v.lockedImplementationIds.includes(itemId)) v.lockedImplementationIds = unlockRequirementDependents(requirements(), v.lockedImplementationIds, itemId);
+    else {
+      const proposal = lockWithRequirements(conflictsForTheme(), requirements(), v.lockedImplementationIds, itemId, implementationsForTheme().map((item) => item.id));
+      if (proposal.missingIds.length) showToast('This choice requires an implementation that is unavailable in this theme.');
+      else if (proposal.completedConflicts.length) showToast(`This requirement chain would complete ${proposal.completedConflicts.length} conflict${proposal.completedConflicts.length === 1 ? '' : 's'}.`);
+      else v.lockedImplementationIds = proposal.locked;
+    }
     render(); markDirty();
   }
   else if (action === 'clear-locks') { v.lockedImplementationIds = []; render(); markDirty(); }
@@ -1216,6 +1260,10 @@ function handleAction(target) {
   else if (action === 'edit-group-link') { closeModal(); openGroupLinkForm(itemId); }
   else if (action === 'delete-group-link') { state.groupLinks = state.groupLinks.filter((item) => item.id !== itemId); render(); markDirty(); openStructureManager(); }
   else if (action === 'manage-conflicts') openConflictManager();
+  else if (action === 'manage-requirements') openRequirementsManager();
+  else if (action === 'add-requirement') { closeModal(); openRequirementForm(); }
+  else if (action === 'edit-requirement') { closeModal(); openRequirementForm(itemId); }
+  else if (action === 'delete-requirement') { const requirement = byId(requirements(), itemId); if (requirement && confirm('Delete this requirement?')) { state.requirements = requirements().filter((item) => item.id !== itemId); render(); markDirty(); openRequirementsManager(); } }
   else if (action === 'add-conflict') { closeModal(); openConflictForm(); }
   else if (action === 'edit-conflict') { closeModal(); openConflictForm(itemId); }
   else if (action === 'delete-conflict') { const conflict = byId(state.conflicts, itemId); if (conflict && confirm(`Delete conflict “${conflict.name}”?`)) { state.conflicts = state.conflicts.filter((item) => item.id !== itemId); render(); markDirty(); openConflictManager(); } }

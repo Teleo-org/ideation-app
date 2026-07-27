@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { blockingConflicts, blendBackground, effectiveConflicts, effectiveImplementations, implementationConflictCount, normalizeLocked, readableTextColor, themeChain } from '../public/core.mjs';
+import { blockingConflicts, blendBackground, effectiveConflicts, effectiveImplementations, implementationConflictCount, lockWithRequirements, normalizeLocked, normalizeLockedWithRequirements, readableTextColor, requirementClosure, themeChain, unlockRequirementDependents } from '../public/core.mjs';
 
 const state = {
   themes: [
@@ -34,6 +34,26 @@ test('multiway conflict only blocks the completing member', () => {
 test('lock normalization drops only choices that complete conflicts', () => {
   const conflicts = effectiveConflicts(state, 'child');
   assert.deepEqual(normalizeLocked(conflicts, ['a', 'b', 'hidden']), ['a', 'b']);
+});
+
+test('directed requirements close through chains and cycles', () => {
+  const requirements = [
+    { fromImplementationId: 'a', toImplementationId: 'b' },
+    { fromImplementationId: 'b', toImplementationId: 'c' },
+    { fromImplementationId: 'c', toImplementationId: 'a' },
+  ];
+  assert.deepEqual(requirementClosure(requirements, ['a']).sort(), ['a', 'b', 'c']);
+  assert.deepEqual(unlockRequirementDependents(requirements, ['a', 'b', 'c'], 'b'), []);
+});
+
+test('requirement chains are rejected when they complete a conflict or need an unavailable choice', () => {
+  const requirements = [{ fromImplementationId: 'a', toImplementationId: 'b' }];
+  const conflicts = [{ implementationIds: ['b', 'c'] }];
+  const blocked = lockWithRequirements(conflicts, requirements, ['c'], 'a', ['a', 'b', 'c']);
+  assert.equal(blocked.completedConflicts.length, 1);
+  const unavailable = lockWithRequirements([], requirements, [], 'a', ['a']);
+  assert.deepEqual(unavailable.missingIds, ['b']);
+  assert.deepEqual(normalizeLockedWithRequirements([], requirements, ['a'], ['a']), []);
 });
 
 test('a child conflict override replaces its inherited base conflict', () => {

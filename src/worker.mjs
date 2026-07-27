@@ -11,7 +11,7 @@ const shareSlug = (name) => `${String(name || 'project').toLowerCase().replace(/
 function defaultState(name = 'My Ideation Project') {
   const themeId = id();
   const stamp = now();
-  return { version: 1, meta: { id: id(), name, createdAt: stamp, updatedAt: stamp }, themes: [{ id: themeId, name: 'Core', parentId: null, hiddenInheritedImplementationIds: [], hiddenInheritedConflictIds: [] }], ideaGroups: [], implementationGroups: [], ideas: [], implementations: [], groupLinks: [], conflicts: [], savedViews: [], uiByTheme: { [themeId]: { lockedImplementationIds: [], visibleImplementationIds: [], previousVisibleImplementationIds: [], expandedIdeaIds: [], expandedImplementationIds: [], showExcluded: true, search: '', ideaGroupFilter: 'all', knownImplementationIds: [] } }, activeThemeId: themeId };
+  return { version: 1, meta: { id: id(), name, createdAt: stamp, updatedAt: stamp }, themes: [{ id: themeId, name: 'Core', parentId: null, hiddenInheritedImplementationIds: [], hiddenInheritedConflictIds: [] }], ideaGroups: [], implementationGroups: [], ideas: [], implementations: [], groupLinks: [], conflicts: [], requirements: [], savedViews: [], uiByTheme: { [themeId]: { lockedImplementationIds: [], visibleImplementationIds: [], previousVisibleImplementationIds: [], expandedIdeaIds: [], expandedImplementationIds: [], showExcluded: true, search: '', ideaGroupFilter: 'all', knownImplementationIds: [] } }, activeThemeId: themeId };
 }
 
 function securityHeaders(response) {

@@ -57,6 +57,42 @@ export function normalizeLocked(conflicts, requestedIds) {
   return result;
 }
 
+export function requirementClosure(requirements, requestedIds) {
+  const selected = new Set(requestedIds);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const requirement of requirements || []) {
+      if (selected.has(requirement.fromImplementationId) && !selected.has(requirement.toImplementationId)) {
+        selected.add(requirement.toImplementationId);
+        changed = true;
+      }
+    }
+  }
+  return [...selected];
+}
+
+export function lockWithRequirements(conflicts, requirements, lockedIds, candidateId, availableIds) {
+  const locked = requirementClosure(requirements, [...lockedIds, candidateId]);
+  const available = availableIds ? new Set(availableIds) : null;
+  const missingIds = available ? locked.filter((id) => !available.has(id)) : [];
+  const completedConflicts = conflicts.filter((conflict) => conflict.implementationIds.every((id) => locked.includes(id)));
+  return { locked, missingIds, completedConflicts };
+}
+
+export function normalizeLockedWithRequirements(conflicts, requirements, requestedIds, availableIds) {
+  let result = [];
+  for (const id of requestedIds) {
+    const proposal = lockWithRequirements(conflicts, requirements, result, id, availableIds);
+    if (!proposal.missingIds.length && !proposal.completedConflicts.length) result = proposal.locked;
+  }
+  return result;
+}
+
+export function unlockRequirementDependents(requirements, lockedIds, implementationId) {
+  return lockedIds.filter((id) => id !== implementationId && !requirementClosure(requirements, [id]).includes(implementationId));
+}
+
 export function implementationConflictCount(conflicts, implementationId) {
   return conflicts.filter((conflict) => conflict.implementationIds.includes(implementationId)).length;
 }
