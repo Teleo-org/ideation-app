@@ -249,6 +249,14 @@ function themeOptions(selectedId, excludeIds = []) {
   return result.join('');
 }
 
+function themePath(themeId) {
+  const names = [];
+  let theme = byId(state.themes, themeId);
+  const seen = new Set();
+  while (theme && !seen.has(theme.id)) { names.unshift(theme.name); seen.add(theme.id); theme = byId(state.themes, theme.parentId); }
+  return names.join(' / ');
+}
+
 function checkboxGrid(name, items, selected = [], labeler = (item) => item.name || item.title || 'Untitled group') {
   const selectedSet = new Set(selected);
   if (!items.length) return '<p class="muted">Nothing available yet.</p>';
@@ -297,7 +305,32 @@ function getRichValue(root = modalBody) {
 }
 
 function renderThemePicker() {
-  $('#theme-select').innerHTML = themeOptions(state.activeThemeId);
+  $('#active-theme-label').textContent = themePath(state.activeThemeId);
+  $('#theme-picker-button').title = `Choose theme: ${themePath(state.activeThemeId)}`;
+}
+
+function openThemePicker() {
+  const children = new Map();
+  for (const theme of state.themes) {
+    const parent = theme.parentId || '__root__';
+    if (!children.has(parent)) children.set(parent, []);
+    children.get(parent).push(theme);
+  }
+  for (const list of children.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+  const rows = [];
+  const walk = (parentId, depth) => {
+    for (const theme of children.get(parentId) || []) {
+      const prefix = depth ? `${'— '.repeat(depth)}` : '';
+      rows.push(`<button class="manager-row theme-choice ${theme.id === state.activeThemeId ? 'selected-theme' : ''}" data-action="select-theme" data-id="${theme.id}"><span>${escapeHtml(prefix + theme.name)}</span><span class="tiny muted">${escapeHtml(themePath(theme.id))}</span></button>`);
+      walk(theme.id, depth + 1);
+    }
+  };
+  walk('__root__', 0);
+  modalManager('Choose theme', `<div class="manager-list">${rows.join('')}</div><div class="form-actions"><button class="button secondary" data-action="add-theme">+ New theme</button><button class="button ghost" data-action="close-modal">Close</button></div>`);
+}
+
+function openCreateMenu() {
+  modalManager('Create', `<div class="manager-list create-menu"><button class="button primary" data-action="create-idea">Idea</button><button class="button primary" data-action="create-implementation">Implementation</button><button class="button secondary" data-action="create-theme">Theme</button><button class="button secondary" data-action="create-idea-group">Idea group</button><button class="button secondary" data-action="create-implementation-group">Implementation group</button></div>`);
 }
 
 function renderFilters() {
@@ -560,12 +593,47 @@ async function moveGuestProjectToCloud() {
   }
 }
 
+function signOutAndReturnToBrowser({ removeBrowserCopy = false } = {}) {
+  if (!clerk) return;
+  if (state && !removeBrowserCopy) saveGuestState(state);
+  if (removeBrowserCopy) localStorage.removeItem(GUEST_STORAGE_KEY);
+  clerk.signOut(() => location.reload());
+}
+
+function startProjectRename() {
+  const title = $('#project-title');
+  if (!title || !state || title.querySelector('input')) return;
+  const original = state.meta.name;
+  title.innerHTML = `<input id="project-title-input" value="${escapeHtml(original)}" aria-label="Project name" />`;
+  const input = $('#project-title-input');
+  const commit = () => {
+    const next = input.value.trim();
+    if (next && next !== original) { state.meta.name = next; markDirty(); }
+    renderStats();
+  };
+  input.addEventListener('blur', commit, { once: true });
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); input.blur(); }
+    if (event.key === 'Escape') { input.value = original; input.blur(); }
+  });
+  input.focus();
+  input.select();
+}
+
 async function initializeClerk() {
   const config = await fetch('/api/config').then((response) => response.json());
   if (!config.clerkPublishableKey) throw new Error('Authentication is not configured yet.');
   clerk = await loadClerkBrowserSdk(config.clerkPublishableKey);
   await clerk.load({ afterSignInUrl: window.location.href, afterSignUpUrl: window.location.href });
-  $('#sign-out-button').hidden = !clerk.user;
+  renderAccountControl();
+}
+
+function renderAccountControl() {
+  const button = $('#account-button');
+  if (!button) return;
+  const signedIn = Boolean(clerk?.user);
+  button.dataset.action = signedIn ? 'sign-out' : 'sign-in';
+  button.textContent = signedIn ? 'Sign out' : 'Sign in';
 }
 
 function loadClerkBrowserSdk(publishableKey) {
@@ -598,10 +666,12 @@ async function boot() {
     await initializeClerk();
     if (clerk.user) await connectSignedInUser();
     else renderStorageNotice();
+    renderAccountControl();
   } catch (error) {
     authenticationError = error.message || 'Authentication could not be initialized.';
     clerk = null;
     renderStorageNotice();
+    renderAccountControl();
     console.warn('Cloud account features are unavailable:', error);
   }
 }
@@ -912,7 +982,8 @@ function handleAction(target) {
     return;
   }
   if (action === 'sync-guest') { moveGuestProjectToCloud(); return; }
-  if (action === 'sign-out') { clerk?.signOut(() => location.reload()); return; }
+  if (action === 'sign-out') { signOutAndReturnToBrowser(); return; }
+  if (action === 'sign-out-and-remove-browser-copy') { signOutAndReturnToBrowser({ removeBrowserCopy: true }); return; }
   if (!state) { showToast('The workbench has not finished starting. Please reload this page.'); return; }
   const v = state ? view() : null;
   if (action === 'browse-project') {
@@ -931,6 +1002,12 @@ function handleAction(target) {
   } else if (action === 'open-project') openProjectFromGate();
   else if (action === 'open-included-project') openIncludedProject();
   else if (action === 'close-modal') closeModal();
+  else if (action === 'create-menu') openCreateMenu();
+  else if (action === 'create-idea') { closeModal(); openIdeaForm(); }
+  else if (action === 'create-implementation') { closeModal(); openImplementationForm(); }
+  else if (action === 'create-theme') { closeModal(); openThemeForm(null, false); }
+  else if (action === 'create-idea-group') { closeModal(); openGroupForm('idea'); }
+  else if (action === 'create-implementation-group') { closeModal(); openGroupForm('implementation'); }
   else if (action === 'add-idea') { closeModal(); openIdeaForm(); }
   else if (action === 'edit-idea') { closeModal(); openIdeaForm(itemId); }
   else if (action === 'delete-idea') deleteIdea(itemId);
@@ -953,8 +1030,9 @@ function handleAction(target) {
   else if (action === 'open-inspector') { currentInspectorId = itemId; renderInspector(); }
   else if (action === 'focus-conflict') { focusedConflictId = itemId; closeModal(); render(); }
   else if (action === 'clear-conflict-focus') { focusedConflictId = null; renderBoard(); }
+  else if (action === 'choose-theme') openThemePicker();
+  else if (action === 'select-theme') { state.activeThemeId = itemId; currentInspectorId = null; focusedConflictId = null; closeModal(); render(); markDirty(); }
   else if (action === 'manage-structure') openStructureManager();
-  else if (action === 'add-theme-quick') { closeModal(); openThemeForm(null, false); }
   else if (action === 'add-theme') { closeModal(); openThemeForm(); }
   else if (action === 'edit-theme') { closeModal(); openThemeForm(itemId); }
   else if (action === 'delete-theme') deleteTheme(itemId);
@@ -1006,7 +1084,8 @@ function handleAction(target) {
     showToast('Project exported as markdown.');
   }
   else if (action === 'project-menu') {
-    modalManager('Project', `<p><strong>${escapeHtml(state.meta.name)}</strong></p><p class="muted">${escapeHtml(projectPath)}</p><div class="manager-list"><button class="button secondary" data-action="export-project-zip">Export portable ZIP</button><button class="button secondary" data-action="export-project-directory">Export project directory</button><button class="button secondary" data-action="import-project-portable">Import project ZIP or JSON</button><button class="button secondary" data-action="import-project-directory">Import project directory</button><button class="button secondary" data-action="export-project">Export as markdown</button><button class="button secondary" data-action="import-project">Import markdown</button><button class="button secondary" data-action="rename-project">Rename project</button><button class="button secondary" data-action="backup">Create backup now</button><button class="button danger" data-action="close-project">Close project</button></div>`);
+    const accountActions = clerk?.user ? `<button class="button secondary" data-action="sign-out">Sign out and keep this browser copy</button><button class="button danger" data-action="sign-out-and-remove-browser-copy">Sign out and remove this browser copy</button>` : '';
+    modalManager('Project', `<p><strong>${escapeHtml(state.meta.name)}</strong></p><p class="muted">${escapeHtml(projectPath)}</p><div class="manager-list"><button class="button secondary" data-action="export-project-zip">Export portable ZIP</button><button class="button secondary" data-action="export-project-directory">Export project directory</button><button class="button secondary" data-action="import-project-portable">Import project ZIP or JSON</button><button class="button secondary" data-action="import-project-directory">Import project directory</button><button class="button secondary" data-action="export-project">Export as markdown</button><button class="button secondary" data-action="import-project">Import markdown</button><button class="button secondary" data-action="backup">Create backup now</button>${accountActions}<button class="button danger" data-action="close-project">Close project</button></div>`);
   }
   else if (action === 'import-project') {
     const input = document.createElement('input');
@@ -1028,6 +1107,7 @@ function handleAction(target) {
     };
     input.click();
   }
+  else if (action === 'rename-project-inline') startProjectRename();
   else if (action === 'rename-project') {
     const next = prompt('Project name', state.meta.name);
     if (next?.trim()) { state.meta.name = next.trim(); closeModal(); render(); markDirty(); }
@@ -1096,11 +1176,6 @@ modal.addEventListener('submit', async (event) => {
   catch (error) { showToast(error.message); }
 });
 
-$('#theme-select').addEventListener('change', (event) => {
-  state.activeThemeId = event.target.value;
-  currentInspectorId = null; focusedConflictId = null;
-  render(); markDirty();
-});
 $('#search-input').addEventListener('input', (event) => { view().search = event.target.value; renderBoard(); markDirty(); });
 $('#idea-group-filter').addEventListener('change', (event) => { view().ideaGroupFilter = event.target.value; renderBoard(); markDirty(); });
 $('#show-excluded').addEventListener('change', (event) => { view().showExcluded = event.target.checked; renderBoard(); markDirty(); });
