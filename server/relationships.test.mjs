@@ -22,3 +22,18 @@ test('requirement builder creates a deduplicated many-to-many graph and rejects 
     { fromImplementationId: 'a', toImplementationId: 'd' },
   ]);
 });
+
+test('requirement builder supports a four-side directional chain and ignores self requirements', () => {
+  const chains = [
+    { from: ['a', 'b'], to: ['c'] },
+    { from: ['c'], to: ['d'] },
+    { from: ['d'], to: ['e'] },
+    { from: ['same'], to: ['same'] },
+  ];
+  assert.deepEqual(requirementEdges(validRequirementChains(chains)), [
+    { fromImplementationId: 'a', toImplementationId: 'c' },
+    { fromImplementationId: 'b', toImplementationId: 'c' },
+    { fromImplementationId: 'c', toImplementationId: 'd' },
+    { fromImplementationId: 'd', toImplementationId: 'e' },
+  ]);
+});
