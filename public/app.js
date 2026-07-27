@@ -884,7 +884,11 @@ function handleAction(target) {
       showToast(authenticationError ? `Sign-in is unavailable: ${authenticationError}` : 'Sign-in is still loading. Please try again in a moment.');
       return;
     }
-    clerk.openSignIn({ afterSignInUrl: window.location.href, afterSignUpUrl: window.location.href });
+    try {
+      Promise.resolve(clerk.openSignIn({ afterSignInUrl: window.location.href, afterSignUpUrl: window.location.href }))
+        .catch((error) => showToast(`Sign-in is unavailable: ${error.message}`));
+      showToast('Opening sign-in…');
+    } catch (error) { showToast(`Sign-in is unavailable: ${error.message}`); }
     return;
   }
   if (action === 'sync-guest') { moveGuestProjectToCloud(); return; }
