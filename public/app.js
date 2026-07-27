@@ -563,12 +563,29 @@ async function moveGuestProjectToCloud() {
 async function initializeClerk() {
   const config = await fetch('/api/config').then((response) => response.json());
   if (!config.clerkPublishableKey) throw new Error('Authentication is not configured yet.');
-  // Keep the core workbench independent from the optional auth client. A Clerk
-  // configuration error must never stop local projects or their controls.
-  const { Clerk } = await import('@clerk/clerk-js');
+  const Clerk = await loadClerkBrowserSdk();
   clerk = new Clerk(config.clerkPublishableKey);
   await clerk.load({ afterSignInUrl: window.location.href, afterSignUpUrl: window.location.href });
   $('#sign-out-button').hidden = !clerk.user;
+}
+
+function loadClerkBrowserSdk() {
+  if (window.Clerk) return Promise.resolve(window.Clerk);
+  return new Promise((resolve, reject) => {
+    const selector = 'script[data-ideation-clerk-sdk]';
+    const existing = document.querySelector(selector);
+    const script = existing || document.createElement('script');
+    const finish = () => window.Clerk ? resolve(window.Clerk) : reject(new Error('Clerk UI components did not load.'));
+    script.addEventListener('load', finish, { once: true });
+    script.addEventListener('error', () => reject(new Error('Clerk UI components could not be loaded.')), { once: true });
+    if (!existing) {
+      script.dataset.ideationClerkSdk = '';
+      script.async = true;
+      script.crossOrigin = 'anonymous';
+      script.src = 'https://cdn.jsdelivr.net/npm/@clerk/clerk-js@6.25.8/dist/clerk.browser.js';
+      document.head.append(script);
+    }
+  });
 }
 
 async function boot() {
