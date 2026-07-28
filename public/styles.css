@@ -302,6 +302,10 @@ a { color: var(--primary-dark); }
 .impl-row.incompatible { background: var(--warn-row-bg); border-color: var(--warn-row-border); }
 .impl-row.conflict-member { outline: 3px solid #e11d48; outline-offset: 1px; }
 .impl-row.conflict-muted { opacity: .42; }
+.impl-row.relationship-conflict { box-shadow: inset 3px 0 #e11d48; }
+.impl-row.relationship-requires { box-shadow: inset 3px 0 #2563eb; }
+.impl-row.relationship-required-by { box-shadow: inset 3px 0 #ea580c; }
+.impl-row.relationship-bidirectional { box-shadow: inset 3px 0 #c026d3; }
 .lock-button { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface); font-size: 13px; }
 .lock-button.active { background: var(--primary); border-color: var(--primary); color: white; }
 .impl-main { min-width: 0; }

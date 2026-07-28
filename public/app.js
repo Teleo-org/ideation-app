@@ -497,9 +497,16 @@ function renderImplementationRow(implementation, allConflicts, v) {
   const relatedConflicts = allConflicts.filter((conflict) => conflict.implementationIds.includes(implementation.id));
   const expanded = v.expandedImplementationIds.includes(implementation.id);
   const selected = v.selectedImplementationIds.includes(implementation.id);
+  const relationKinds = v.selectedImplementationIds.filter((id) => id !== implementation.id).map((selectedId) => {
+    const conflict = allConflicts.some((item) => item.implementationIds.includes(selectedId) && item.implementationIds.includes(implementation.id));
+    const requires = requirements().some((item) => item.fromImplementationId === selectedId && item.toImplementationId === implementation.id);
+    const requiredBy = requirements().some((item) => item.fromImplementationId === implementation.id && item.toImplementationId === selectedId);
+    return conflict ? 'relationship-conflict' : requires && requiredBy ? 'relationship-bidirectional' : requires ? 'relationship-requires' : requiredBy ? 'relationship-required-by' : '';
+  }).filter(Boolean);
+  const relationClass = relationKinds.includes('relationship-conflict') ? 'relationship-conflict' : relationKinds.includes('relationship-bidirectional') ? 'relationship-bidirectional' : relationKinds.includes('relationship-requires') ? 'relationship-requires' : relationKinds.includes('relationship-required-by') ? 'relationship-required-by' : '';
   const focused = focusedConflictId ? byId(allConflicts, focusedConflictId) : null;
   const focusClass = focusedConflictId ? (focused?.implementationIds.includes(implementation.id) ? 'conflict-member' : 'conflict-muted') : '';
-  return `<article class="impl-row ${locked ? 'locked' : ''} ${selected ? 'selected' : ''} ${blockers.length ? 'incompatible' : ''} ${focusClass}" data-implementation-id="${implementation.id}">
+  return `<article class="impl-row ${locked ? 'locked' : ''} ${selected ? 'selected' : ''} ${relationClass} ${blockers.length ? 'incompatible' : ''} ${focusClass}" data-implementation-id="${implementation.id}">
     <div class="impl-main">
       <button class="impl-title-button" data-action="open-inspector" data-id="${implementation.id}">${escapeHtml(implementation.title)}</button>
       <div class="impl-subline">${implementationBadges(implementation, blockers, relatedConflicts, implementation.directInTheme)}</div>
@@ -1175,10 +1182,10 @@ function openImplementationForm(implementationId = null, preselectedIdeaId = nul
   });
 }
 
-function openConflictForm(conflictId = null, overridesConflictId = null) {
+function openConflictForm(conflictId = null, overridesConflictId = null, preselectedImplementationId = null, returnToRelationshipsId = null) {
   const conflict = conflictId ? byId(state.conflicts, conflictId) : null;
   const base = overridesConflictId ? byId(state.conflicts, overridesConflictId) : null;
-  const selectedIds = conflict?.implementationIds || base?.implementationIds || [];
+  const selectedIds = conflict?.implementationIds || base?.implementationIds || (preselectedImplementationId ? [preselectedImplementationId] : []);
   const selectedScope = conflict ? (conflict.themeId ?? 'global') : state.activeThemeId;
   modalForm(conflict ? 'Edit conflict' : overridesConflictId ? 'Override inherited conflict' : 'Add conflict', `
     <div class="form-grid">
@@ -1201,6 +1208,7 @@ function openConflictForm(conflictId = null, overridesConflictId = null) {
     };
     if (conflict) Object.assign(conflict, payload); else state.conflicts.push(payload);
     closeModal(); render(); markDirty();
+    if (returnToRelationshipsId) openImplementationRelationships(returnToRelationshipsId);
   });
 }
 
@@ -1304,7 +1312,7 @@ function openConflictManager() {
   modalManager(`Conflicts in ${activeTheme().name}`, `<div class="manager-heading"><p class="callout">A conflict set becomes invalid only when every member is locked. Subsets remain valid.</p><button class="button primary" data-action="add-conflict">+ Conflict</button></div><div class="manager-list">${rows || '<p class="muted">No conflicts apply to this theme.</p>'}</div>${hiddenRows ? `<section class="manager-section"><h3>Hidden inherited conflicts</h3><div class="manager-list">${hiddenRows}</div></section>` : ''}`);
 }
 
-function openRequirementForm(requirementId = null) {
+function openRequirementForm(requirementId = null, preselectedFromImplementationId = null, returnToRelationshipsId = null) {
   const requirement = requirementId ? byId(requirements(), requirementId) : null;
   if (state.implementations.length < 2) { showToast('Create at least two implementations first.'); return; }
   modalForm(requirement ? 'Edit requirement' : 'Add requirement', `
@@ -1319,8 +1327,10 @@ function openRequirementForm(requirementId = null) {
     if (requirements().some((item) => item.id !== requirement?.id && item.fromImplementationId === fromImplementationId && item.toImplementationId === toImplementationId)) throw new Error('That directional requirement already exists.');
     const payload = { id: requirement?.id || id(), fromImplementationId, toImplementationId };
     if (requirement) Object.assign(requirement, payload); else requirements().push(payload);
-    closeModal(); render(); markDirty(); openRequirementsManager();
+    closeModal(); render(); markDirty();
+    if (returnToRelationshipsId) openImplementationRelationships(returnToRelationshipsId); else openRequirementsManager();
   });
+  if (!requirement && preselectedFromImplementationId) modalBody.querySelector('[name="fromImplementationId"]').value = preselectedFromImplementationId;
 }
 
 function openRequirementsManager() {
@@ -1330,6 +1340,16 @@ function openRequirementsManager() {
     return `<div class="manager-row"><div><strong>${escapeHtml(from?.title || 'Missing implementation')} → ${escapeHtml(to?.title || 'Missing implementation')}</strong><div class="tiny muted">Locking the first automatically locks the second.</div></div><div class="manager-row-actions"><button class="button ghost" data-action="edit-requirement" data-id="${requirement.id}">Edit</button><button class="button danger" data-action="delete-requirement" data-id="${requirement.id}">Delete</button></div></div>`;
   }).join('');
   modalManager('Requirements', `<div class="manager-heading"><p class="callout">A → B means choosing A also chooses B. Add reverse edges for bidirectional requirements; cycles and chains are valid.</p><button class="button primary" data-action="add-requirement">+ Requirement</button></div><div class="manager-list">${rows || '<p class="muted">No requirements yet.</p>'}</div>`);
+}
+
+function openImplementationRelationships(implementationId) {
+  const implementation = byId(state.implementations, implementationId);
+  if (!implementation) return;
+  const conflicts = state.conflicts.filter((item) => item.implementationIds.includes(implementationId));
+  const outgoing = requirements().filter((item) => item.fromImplementationId === implementationId);
+  const incoming = requirements().filter((item) => item.toImplementationId === implementationId);
+  const requirementRow = (item, direction) => `<div class="manager-row"><div><strong>${escapeHtml(direction === 'out' ? 'Requires' : 'Required by')} ${escapeHtml(byId(state.implementations, direction === 'out' ? item.toImplementationId : item.fromImplementationId)?.title || 'Missing implementation')}</strong></div><button class="button ghost" data-action="edit-relationship-requirement" data-id="${item.id}" data-return-id="${implementationId}">Edit</button></div>`;
+  modalManager(`Relationships: ${implementation.title}`, `<section class="manager-section"><div class="manager-heading"><h3>Conflicts</h3><button class="button secondary compact" data-action="add-conflict-for-implementation" data-id="${implementationId}">+ Conflict</button></div><div class="manager-list">${conflicts.map((item) => `<div class="manager-row"><div><strong>${escapeHtml(item.name)}</strong><div class="tiny muted">${item.implementationIds.length} members</div></div><button class="button ghost" data-action="edit-relationship-conflict" data-id="${item.id}" data-return-id="${implementationId}">Edit</button></div>`).join('') || '<p class="muted">No conflicts.</p>'}</div></section><section class="manager-section"><div class="manager-heading"><h3>Requirements</h3><button class="button secondary compact" data-action="add-requirement-for-implementation" data-id="${implementationId}">+ Requirement</button></div><div class="manager-list">${outgoing.map((item) => requirementRow(item, 'out')).join('') || ''}${incoming.map((item) => requirementRow(item, 'in')).join('') || ''}${!outgoing.length && !incoming.length ? '<p class="muted">No requirements.</p>' : ''}</div></section><div class="form-actions"><button class="button ghost" data-action="close-modal">Close</button></div>`);
 }
 
 function relationshipPicker(preselectedIds, pickedIds, showAll, query, actionPrefix) {
@@ -1745,7 +1765,7 @@ function handleAction(target) {
   else if (action === 'edit-idea') { closeModal(); openIdeaForm(itemId); }
   else if (action === 'delete-idea') deleteIdea(itemId);
   else if (action === 'add-implementation') { closeModal(); openImplementationForm(null, target.dataset.ideaId || null); }
-  else if (action === 'edit-implementation') { closeModal(); openImplementationForm(itemId); }
+  else if (action === 'edit-implementation') openImplementationRelationships(itemId);
   else if (action === 'delete-implementation') { if (removeImplementation(itemId)) { render(); markDirty(); } }
   else if (action === 'toggle-idea-details') { v.expandedIdeaIds = v.expandedIdeaIds.includes(itemId) ? v.expandedIdeaIds.filter((id) => id !== itemId) : [...v.expandedIdeaIds, itemId]; render(); markDirty(); }
   else if (action === 'toggle-impl-details') { v.expandedImplementationIds = v.expandedImplementationIds.includes(itemId) ? v.expandedImplementationIds.filter((id) => id !== itemId) : [...v.expandedImplementationIds, itemId]; render(); markDirty(); }
@@ -1808,9 +1828,13 @@ function handleAction(target) {
   else if (action === 'manage-requirements') openRequirementsManager();
   else if (action === 'add-requirement') { closeModal(); openRequirementForm(); }
   else if (action === 'edit-requirement') { closeModal(); openRequirementForm(itemId); }
+  else if (action === 'add-requirement-for-implementation') { closeModal(); openRequirementForm(null, itemId, itemId); }
+  else if (action === 'edit-relationship-requirement') { const returnId = target.dataset.returnId; closeModal(); openRequirementForm(itemId, null, returnId); }
   else if (action === 'delete-requirement') { const requirement = byId(requirements(), itemId); if (requirement && confirm('Delete this requirement?')) { state.requirements = requirements().filter((item) => item.id !== itemId); render(); markDirty(); openRequirementsManager(); } }
   else if (action === 'add-conflict') { closeModal(); openConflictForm(); }
   else if (action === 'edit-conflict') { closeModal(); openConflictForm(itemId); }
+  else if (action === 'add-conflict-for-implementation') { closeModal(); openConflictForm(null, null, itemId, itemId); }
+  else if (action === 'edit-relationship-conflict') { const returnId = target.dataset.returnId; closeModal(); openConflictForm(itemId, null, null, returnId); }
   else if (action === 'delete-conflict') { const conflict = byId(state.conflicts, itemId); if (conflict && confirm(`Delete conflict “${conflict.name}”?`)) { state.conflicts = state.conflicts.filter((item) => item.id !== itemId); render(); markDirty(); openConflictManager(); } }
   else if (action === 'override-conflict') { closeModal(); openConflictForm(null, itemId); }
   else if (action === 'hide-conflict') { const theme = activeTheme(); theme.hiddenInheritedConflictIds = unique([...(theme.hiddenInheritedConflictIds || []), itemId]); render(); markDirty(); openConflictManager(); }
