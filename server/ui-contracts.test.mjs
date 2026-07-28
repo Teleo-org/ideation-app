@@ -27,6 +27,7 @@ test('create relationship flow uses the same picker with an empty, open list', (
 });
 
 test('shared and private boards use the same board controls component', () => {
+  assert.match(index, /<section id="board-controls" class="filterbar">/);
   assert.match(app, /from '\.\/board-controls\.mjs'/);
   assert.match(shared, /from '\.\/board-controls\.mjs'/);
   assert.match(shared, /boardControlsHtml\(\{ view: localView, groups: project\.ideaGroups \|\| \[\], shared: true \}\)/);
@@ -41,4 +42,13 @@ test('Clerk bootstrap has a visible loading state, timeout, retry, and first-par
   assert.match(app, /clerk\.teleoflexuous\.com\/npm\/@clerk\/clerk-js/);
   assert.match(app, /clerkStatus === 'error'/);
   assert.match(app, /Retrying sign-in/);
+  assert.match(app, /try \{\s*await continueAsGuest\(\);\s*await initializeClerk\(\);/);
+});
+
+test('private client shell contains every startup control host used by app bootstrap', () => {
+  for (const id of ['app', 'account-button', 'board-controls', 'board', 'inspector', 'modal', 'modal-title', 'modal-body', 'toast']) {
+    assert.match(index, new RegExp(`id="${id}"`), `#${id} is present in the initial document`);
+  }
+  assert.match(app, /\$\('#board-controls'\)\.addEventListener\('input'/);
+  assert.match(app, /\$\('#board-controls'\)\.addEventListener\('change'/);
 });
