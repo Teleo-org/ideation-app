@@ -39,6 +39,8 @@ let lastSavedSnapshot = '';
 let includedProjects = [];
 let storageMode = null;
 let clerk = null;
+let clerkStatus = 'idle';
+let clerkInitialization = null;
 let guestState = null;
 let cloudWorkspaceReady = false;
 let authenticationError = '';
@@ -1085,15 +1087,30 @@ function startProjectRename() {
 }
 
 async function initializeClerk() {
-  const config = await fetch('/api/config').then((response) => response.json());
+  if (clerkInitialization) return clerkInitialization;
+  clerkStatus = 'loading';
+  renderAccountControl();
+  clerkInitialization = (async () => {
+  const response = await fetch('/api/config');
+  if (!response.ok) throw new Error('Authentication settings could not be loaded.');
+  const config = await response.json();
   if (config.selfHosted) {
     selfHosted = true;
+    clerkStatus = 'ready';
     return;
   }
   if (!config.clerkPublishableKey) throw new Error('Authentication is not configured yet.');
   clerk = await loadClerkBrowserSdk(config.clerkPublishableKey);
-  await clerk.load({ afterSignInUrl: window.location.href, afterSignUpUrl: window.location.href });
+  await Promise.race([
+    clerk.load({ afterSignInUrl: window.location.href, afterSignUpUrl: window.location.href }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Clerk took too long to initialize. Please try again.')), 15000)),
+  ]);
+  clerkStatus = 'ready';
   renderAccountControl();
+  })();
+  try { return await clerkInitialization; }
+  catch (error) { clerkStatus = 'error'; throw error; }
+  finally { clerkInitialization = null; }
 }
 
 function renderAccountControl() {
@@ -1103,6 +1120,14 @@ function renderAccountControl() {
     button.hidden = true;
     return;
   }
+  if (clerkStatus === 'loading') {
+    button.disabled = true;
+    button.innerHTML = '<span class="loading-spinner" aria-hidden="true"></span> Loading sign-in…';
+    button.setAttribute('aria-busy', 'true');
+    return;
+  }
+  button.disabled = false;
+  button.removeAttribute('aria-busy');
   const signedIn = Boolean(clerk?.user);
   button.dataset.action = signedIn ? 'open-sign-out-menu' : 'sign-in';
   button.textContent = signedIn ? 'Sign out' : 'Sign in';
@@ -1122,7 +1147,7 @@ function loadClerkBrowserSdk(publishableKey) {
       script.dataset.clerkPublishableKey = publishableKey;
       script.async = true;
       script.crossOrigin = 'anonymous';
-      script.src = 'https://cdn.jsdelivr.net/npm/@clerk/clerk-js@6.25.8/dist/clerk.browser.js';
+      script.src = 'https://clerk.teleoflexuous.com/npm/@clerk/clerk-js@6.25.8/dist/clerk.browser.js';
       document.head.append(script);
     }
   });
@@ -1133,8 +1158,8 @@ async function boot() {
   $('#project-name')?.closest('.field')?.setAttribute('hidden', '');
   $('[data-action="open-project"]')?.setAttribute('hidden', '');
   $('#included-projects')?.setAttribute('hidden', '');
-  await continueAsGuest();
   try {
+    await continueAsGuest();
     await initializeClerk();
     if (selfHosted) {
       storageMode = 'cloud';
@@ -1148,6 +1173,7 @@ async function boot() {
     renderAccountControl();
   } catch (error) {
     authenticationError = error.message || 'Authentication could not be initialized.';
+    clerkStatus = 'error';
     clerk = null;
     renderStorageNotice();
     renderAccountControl();
@@ -1671,6 +1697,12 @@ function handleAction(target) {
   if (action === 'sign-in') {
     if (storageMode === 'guest' && state) saveGuestState(state);
     if (!clerk) {
+      if (clerkStatus === 'error') {
+        authenticationError = '';
+        initializeClerk().then(() => handleAction(target)).catch((error) => showToast(`Sign-in is unavailable: ${error.message}`));
+        showToast('Retrying sign-in…');
+        return;
+      }
       showToast(authenticationError ? `Sign-in is unavailable: ${authenticationError}` : 'Sign-in is still loading. Please try again in a moment.');
       return;
     }

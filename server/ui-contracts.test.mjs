@@ -32,3 +32,13 @@ test('shared and private boards use the same board controls component', () => {
   assert.match(shared, /boardControlsHtml\(\{ view: localView, groups: project\.ideaGroups \|\| \[\], shared: true \}\)/);
   assert.match(shared, /shared-idea-sort/);
 });
+
+test('Clerk bootstrap has a visible loading state, timeout, retry, and first-party loader', () => {
+  assert.match(app, /let clerkStatus = 'idle'/);
+  assert.match(app, /clerkStatus === 'loading'/);
+  assert.match(app, /loading-spinner/);
+  assert.match(app, /Clerk took too long to initialize/);
+  assert.match(app, /clerk\.teleoflexuous\.com\/npm\/@clerk\/clerk-js/);
+  assert.match(app, /clerkStatus === 'error'/);
+  assert.match(app, /Retrying sign-in/);
+});

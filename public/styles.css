@@ -238,6 +238,8 @@ a { color: var(--primary-dark); }
 .theme-choice { width: 100%; text-align: left; cursor: pointer; }
 .theme-choice.selected-theme { border-color: var(--primary); background: var(--primary-tint-bg); }
 .button { min-height: 38px; padding: 8px 13px; border: 1px solid transparent; border-radius: 10px; font-weight: 750; transition: .15s ease; }
+.loading-spinner { display: inline-block; width: .8em; height: .8em; margin-right: .3em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 999px; vertical-align: -.08em; animation: ideation-spin .7s linear infinite; }
+@keyframes ideation-spin { to { transform: rotate(1turn); } }
 .button:hover { transform: translateY(-1px); }
 .button.primary { background: var(--primary); color: white; box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 20%, transparent); }
 .button.primary:hover { background: var(--primary-dark); }
