@@ -411,7 +411,7 @@ function openThemePicker() {
 }
 
 function openCreateMenu() {
-  modalManager('Create', `<div class="manager-list create-menu"><button class="button primary" data-action="create-idea">Idea</button><button class="button primary" data-action="create-implementation">Implementation</button><button class="button secondary" data-action="create-theme">Theme</button><button class="button secondary" data-action="create-idea-group">Idea group</button><button class="button secondary" data-action="create-implementation-group">Implementation group</button><button class="button ghost" data-action="manage-conflicts">Conflicts</button><button class="button ghost" data-action="manage-requirements">Requirements</button></div>`);
+  modalManager('Create', `<div class="manager-list create-menu"><button class="button primary" data-action="create-idea">Idea</button><button class="button primary" data-action="create-implementation">Implementation</button><button class="button secondary" data-action="create-theme">Theme</button><button class="button secondary" data-action="create-idea-group">Idea group</button><button class="button secondary" data-action="create-implementation-group">Implementation group</button><button class="button ghost" data-action="open-empty-relationship-flow">Conflict / requirement</button></div>`);
 }
 
 function openCommandPalette() {
@@ -444,12 +444,21 @@ function openMobileFilters() {
   const v = view();
   const groups = state.ideaGroups.map((group) => `<label class="checkbox-item"><input type="checkbox" data-mobile-group-filter value="${group.id}" ${v.ideaGroupFilterIds.includes(group.id) ? 'checked' : ''}><span>${escapeHtml(group.name || 'Untitled group')}</span></label>`).join('');
   modalManager('Filters and visibility', `<label class="toggle-label"><input type="checkbox" data-mobile-show-excluded ${v.showExcluded ? 'checked' : ''}> Show excluded choices</label><div class="form-actions"><button class="button secondary" data-action="show-all">Show all</button><button class="button secondary" data-action="hide-all">Hide all</button><button class="button ghost" data-action="restore-visible">Restore previous</button></div><h3>Idea groups</h3><div class="checkbox-grid"><label class="checkbox-item"><input type="checkbox" data-mobile-group-filter value="__ungrouped__" ${v.ideaGroupFilterIds.includes('__ungrouped__') ? 'checked' : ''}><span>Ungrouped</span></label>${groups}</div><div class="form-actions"><button class="button ghost" data-action="clear-mobile-filters">Clear groups</button><button class="button primary" data-action="apply-mobile-filters">Apply</button></div>`);
+  const sort = document.createElement('label');
+  sort.className = 'field';
+  sort.innerHTML = `<span>Sort ideas</span><select data-mobile-idea-sort><option value="manual">Manual</option><option value="implementations">Implementation count</option><option value="locked">Locked count</option><option value="conflicts">Conflict count</option></select>`;
+  sort.querySelector('select').value = v.ideaSort;
+  modalBody.querySelector('.form-actions')?.before(sort);
 }
 
 function renderFilters() {
   const v = view();
   $('#search-input').value = v.search;
   $('#show-excluded').checked = v.showExcluded;
+  $('#idea-sort').value = v.ideaSort;
+  const sortDirection = $('#idea-sort-direction');
+  sortDirection.textContent = v.ideaSortDirection === 'desc' ? '↓' : '↑';
+  sortDirection.title = `Sort ${v.ideaSortDirection === 'desc' ? 'descending' : 'ascending'}`;
   const selectedGroups = new Set(v.ideaGroupFilterIds);
   const groupLabel = !selectedGroups.size ? 'All groups' : selectedGroups.size === 1 && selectedGroups.has('__ungrouped__') ? 'Ungrouped' : `${selectedGroups.size} group${selectedGroups.size === 1 ? '' : 's'}`;
   $('#idea-group-filter-label').textContent = groupLabel;
@@ -1361,13 +1370,14 @@ function relationshipPicker(preselectedIds, pickedIds, showAll, query, actionPre
   const top = state.implementations.filter((item) => preselected.has(item.id));
   const additional = state.implementations.filter((item) => !preselected.has(item.id) && fuzzyMatches(item.title, query));
   const option = (item) => `<button class="relationship-option ${picked.has(item.id) ? 'selected' : ''}" data-action="${actionPrefix}-toggle" data-id="${item.id}">${escapeHtml(item.title)}</button>`;
+  if (!top.length) return `<div class="relationship-picker"><input class="relationship-search" data-relationship-search="${actionPrefix}" placeholder="Search implementations" value="${escapeHtml(query)}" autofocus /><div class="relationship-options">${additional.map(option).join('') || '<span class="muted tiny">No matching implementations.</span>'}</div></div>`;
   return `<div class="relationship-picker"><div class="relationship-selected">${top.map(option).join('') || '<span class="muted tiny">No preselected implementations.</span>'}</div><button class="relationship-more" data-action="${actionPrefix}-more">Show other implementations <span>▾</span></button>${showAll ? `<input class="relationship-search" data-relationship-search="${actionPrefix}" placeholder="Search implementations…" value="${escapeHtml(query)}" autofocus /><div class="relationship-options">${additional.map(option).join('') || '<span class="muted tiny">No matching implementations.</span>'}</div>` : ''}</div>`;
 }
 
-function openRelationshipFlow() {
+function openRelationshipFlow(allowEmpty = false) {
   const selected = view().selectedImplementationIds.filter((id) => byId(state.implementations, id));
-  if (selected.length < 2) { showToast('Select at least two implementations first.'); return; }
-  relationshipDraft = { preselected: selected, picked: [], conflictMembers: [], showAll: false, query: '', conflictMenuOpen: false, screen: 'flow' };
+  if (selected.length < 2 && !allowEmpty) { showToast('Select at least two implementations first.'); return; }
+  relationshipDraft = { preselected: selected, picked: [], conflictMembers: [], showAll: allowEmpty, query: '', conflictMenuOpen: false, screen: 'flow' };
   renderRelationshipFlow();
 }
 
@@ -1726,6 +1736,7 @@ function handleAction(target) {
   else if (action === 'open-more-menu') openMoreMenu();
   else if (action === 'open-command-palette') openCommandPalette();
   else if (action === 'open-display-settings') openDisplaySettings();
+  else if (action === 'toggle-idea-sort-direction') { v.ideaSortDirection = v.ideaSortDirection === 'desc' ? 'asc' : 'desc'; renderFilters(); renderBoard(); markDirty(); }
   else if (action === 'toggle-board-density') {
     boardDensity = boardDensity === 'compact' ? 'detailed' : 'compact';
     localStorage.setItem('ideation-workbench:board-density', boardDensity);
@@ -1738,11 +1749,13 @@ function handleAction(target) {
   else if (action === 'apply-mobile-filters') {
     v.ideaGroupFilterIds = $$('[data-mobile-group-filter]:checked', modalBody).map((input) => input.value);
     v.showExcluded = Boolean($('[data-mobile-show-excluded]', modalBody)?.checked);
+    v.ideaSort = String($('[data-mobile-idea-sort]', modalBody)?.value || v.ideaSort);
     closeModal();
     render();
     markDirty();
   }
   else if (action === 'open-relationship-flow') openRelationshipFlow();
+  else if (action === 'open-empty-relationship-flow') openRelationshipFlow(true);
   else if (action === 'open-conflict-builder') openConflictBuilder();
   else if (action === 'relationship-toggle') { relationshipDraft.picked = relationshipDraft.picked.includes(itemId) ? relationshipDraft.picked.filter((id) => id !== itemId) : [...relationshipDraft.picked, itemId]; renderConflictBuilder(); }
   else if (action === 'relationship-more') { relationshipDraft.showAll = !relationshipDraft.showAll; renderConflictBuilder(); }
@@ -2039,6 +2052,7 @@ modal.addEventListener('cancel', (event) => {
 
 $('#search-input').addEventListener('input', (event) => { view().search = event.target.value; renderBoard(); markDirty(); });
 $('#show-excluded').addEventListener('change', (event) => { view().showExcluded = event.target.checked; renderBoard(); markDirty(); });
+$('#idea-sort').addEventListener('change', (event) => { view().ideaSort = event.target.value; renderBoard(); markDirty(); });
 $('#inspector').addEventListener('submit', (event) => {
   if (event.target.id !== 'inspector-form') return;
   event.preventDefault();

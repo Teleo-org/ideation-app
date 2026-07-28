@@ -431,9 +431,9 @@ a { color: var(--primary-dark); }
   .top-actions .button:not(.create-button):not(#account-button):not(.relationship-button):not(.lock-selected-button):not(.more-button) { display: none; }
   .top-actions .more-button { display: block; }
   .relationship-button, .lock-selected-button { min-height: 34px; padding-inline: 8px; font-size: 11px; white-space: nowrap; }
-  .filterbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; overflow: visible; padding: 9px 10px; }
+  .filterbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; overflow: visible; padding: 9px 10px; }
   .filterbar .search-box { width: 100%; }
-  .filterbar > :not(.search-box):not(.mobile-filter-button) { display: none; }
+  .filterbar > :not(.search-box):not(.mobile-filter-button):not([data-action="open-display-settings"]) { display: none; }
   .mobile-filter-button { display: block; }
   .workspace, .workspace.has-inspector { grid-template-columns: 1fr; }
   .workspace.has-inspector { grid-template-rows: minmax(0, 1fr) auto; }

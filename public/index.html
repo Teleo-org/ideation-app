@@ -84,6 +84,11 @@
     </header>
 
     <section class="filterbar">
+      <label class="compact-field sort-control">
+        <span>Sort ideas</span>
+        <select id="idea-sort" aria-label="Sort ideas"><option value="manual">Manual</option><option value="implementations">Implementation count</option><option value="locked">Locked count</option><option value="conflicts">Conflict count</option></select>
+      </label>
+      <button id="idea-sort-direction" class="button ghost compact" data-action="toggle-idea-sort-direction" title="Sort ascending" aria-label="Toggle sort direction">↑</button>
       <label class="search-box">
         <span class="sr-only">Search</span>
         <input id="search-input" type="search" placeholder="Search ideas and implementations…" />
@@ -96,6 +101,7 @@
       <button class="button ghost compact" data-action="show-all">Show all</button>
       <button class="button ghost compact" data-action="hide-all">Hide all</button>
       <button class="button ghost compact" data-action="restore-visible">Restore previous</button>
+      <button class="button ghost compact" data-action="open-display-settings" title="Font size settings" aria-label="Font size settings">⚙</button>
       <label class="toggle-label" title="Shows implementations that cannot currently be locked because they would complete a conflict. Turn it off to hide them."><input id="show-excluded" type="checkbox" checked /> Show excluded</label>
       <div class="lock-summary"><strong id="lock-count">0 locked</strong><button class="link-button" data-action="clear-locks">Clear</button></div>
     </section>
