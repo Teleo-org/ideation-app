@@ -602,7 +602,7 @@ function renderBoard() {
           </div>
         </header>
         ${expanded && detailsText(idea) ? `<div class="idea-details">${markdownToSafeHtml(detailsText(idea))}</div>` : ''}
-        ${allHidden ? '' : `<div class="implementation-list">
+        ${allHidden ? `<div class="hidden-strip">${hiddenImplementations.map((implementation) => `<span class="hidden-chip">${escapeHtml(implementation.title)} <button data-action="show-implementation" data-id="${implementation.id}">show</button></span>`).join('')}</div>` : `<div class="implementation-list">
           ${sortedVisible.length ? sortedVisible.map((implementation) => renderImplementationRow(implementation, allConflicts, v)).join('') : `<div class="empty-impl">${implementations.length ? 'All implementations are hidden.' : 'No implementation in this theme.'}</div>`}
           ${hiddenImplementations.length ? `<div class="hidden-strip">${hiddenImplementations.map((implementation) => `<span class="hidden-chip">${escapeHtml(implementation.title)} <button data-action="show-implementation" data-id="${implementation.id}">show</button></span>`).join('')}</div>` : ''}
         </div>`}
@@ -1345,11 +1345,15 @@ function openRequirementsManager() {
 function openImplementationRelationships(implementationId) {
   const implementation = byId(state.implementations, implementationId);
   if (!implementation) return;
+  const effectiveItem = implementationsForTheme().find((item) => item.id === implementationId);
   const conflicts = state.conflicts.filter((item) => item.implementationIds.includes(implementationId));
   const outgoing = requirements().filter((item) => item.fromImplementationId === implementationId);
   const incoming = requirements().filter((item) => item.toImplementationId === implementationId);
+  const themeOrigins = (effectiveItem?.originThemeIds || implementation.themeIds).map((themeId) => `${escapeHtml(themeName(themeId))}${themeId === state.activeThemeId ? ' (direct)' : ' (inherited)'}`).join(', ');
+  const ideaNames = implementation.ideaIds.map((ideaId) => byId(state.ideas, ideaId)?.title).filter(Boolean);
+  const groupNames = implementation.groupIds.map((groupId) => byId(state.implementationGroups, groupId)?.name || 'Untitled group');
   const requirementRow = (item, direction) => `<div class="manager-row"><div><strong>${escapeHtml(direction === 'out' ? 'Requires' : 'Required by')} ${escapeHtml(byId(state.implementations, direction === 'out' ? item.toImplementationId : item.fromImplementationId)?.title || 'Missing implementation')}</strong></div><button class="button ghost" data-action="edit-relationship-requirement" data-id="${item.id}" data-return-id="${implementationId}">Edit</button></div>`;
-  modalManager(`Relationships: ${implementation.title}`, `<section class="manager-section"><div class="manager-heading"><h3>Conflicts</h3><button class="button secondary compact" data-action="add-conflict-for-implementation" data-id="${implementationId}">+ Conflict</button></div><div class="manager-list">${conflicts.map((item) => `<div class="manager-row"><div><strong>${escapeHtml(item.name)}</strong><div class="tiny muted">${item.implementationIds.length} members</div></div><button class="button ghost" data-action="edit-relationship-conflict" data-id="${item.id}" data-return-id="${implementationId}">Edit</button></div>`).join('') || '<p class="muted">No conflicts.</p>'}</div></section><section class="manager-section"><div class="manager-heading"><h3>Requirements</h3><button class="button secondary compact" data-action="add-requirement-for-implementation" data-id="${implementationId}">+ Requirement</button></div><div class="manager-list">${outgoing.map((item) => requirementRow(item, 'out')).join('') || ''}${incoming.map((item) => requirementRow(item, 'in')).join('') || ''}${!outgoing.length && !incoming.length ? '<p class="muted">No requirements.</p>' : ''}</div></section><div class="form-actions"><button class="button ghost" data-action="close-modal">Close</button></div>`);
+  modalManager(`Relationships: ${implementation.title}`, `<section class="manager-section"><div class="manager-heading"><h3>Implementation</h3><button class="button ghost compact" data-action="open-implementation-form" data-id="${implementationId}">Edit details</button></div><div class="inspector-list"><div class="inspector-item"><span>Ideas</span><span>${escapeHtml(ideaNames.join(', ') || 'None')}</span></div><div class="inspector-item"><span>Theme origin</span><span>${themeOrigins || 'None'}</span></div><div class="inspector-item"><span>Groups</span><span>${escapeHtml(groupNames.join(', ') || 'None')}</span></div></div>${detailsText(implementation) ? `<div class="impl-details">${markdownToSafeHtml(detailsText(implementation))}</div>` : ''}</section><section class="manager-section"><div class="manager-heading"><h3>Conflicts</h3><button class="button secondary compact" data-action="add-conflict-for-implementation" data-id="${implementationId}">+ Conflict</button></div><div class="manager-list">${conflicts.map((item) => `<div class="manager-row"><div><strong>${escapeHtml(item.name)}</strong><div class="tiny muted">${item.implementationIds.length} members</div></div><button class="button ghost" data-action="edit-relationship-conflict" data-id="${item.id}" data-return-id="${implementationId}">Edit</button></div>`).join('') || '<p class="muted">No conflicts.</p>'}</div></section><section class="manager-section"><div class="manager-heading"><h3>Requirements</h3><button class="button secondary compact" data-action="add-requirement-for-implementation" data-id="${implementationId}">+ Requirement</button></div><div class="manager-list">${outgoing.map((item) => requirementRow(item, 'out')).join('') || ''}${incoming.map((item) => requirementRow(item, 'in')).join('') || ''}${!outgoing.length && !incoming.length ? '<p class="muted">No requirements.</p>' : ''}</div></section><div class="form-actions"><button class="button ghost" data-action="close-modal">Close</button></div>`);
 }
 
 function relationshipPicker(preselectedIds, pickedIds, showAll, query, actionPrefix) {
@@ -1766,6 +1770,7 @@ function handleAction(target) {
   else if (action === 'delete-idea') deleteIdea(itemId);
   else if (action === 'add-implementation') { closeModal(); openImplementationForm(null, target.dataset.ideaId || null); }
   else if (action === 'edit-implementation') openImplementationRelationships(itemId);
+  else if (action === 'open-implementation-form') { closeModal(); openImplementationForm(itemId); }
   else if (action === 'delete-implementation') { if (removeImplementation(itemId)) { render(); markDirty(); } }
   else if (action === 'toggle-idea-details') { v.expandedIdeaIds = v.expandedIdeaIds.includes(itemId) ? v.expandedIdeaIds.filter((id) => id !== itemId) : [...v.expandedIdeaIds, itemId]; render(); markDirty(); }
   else if (action === 'toggle-impl-details') { v.expandedImplementationIds = v.expandedImplementationIds.includes(itemId) ? v.expandedImplementationIds.filter((id) => id !== itemId) : [...v.expandedImplementationIds, itemId]; render(); markDirty(); }
@@ -1969,6 +1974,12 @@ function handleAction(target) {
 }
 
 document.addEventListener('click', (event) => {
+  const groupFilter = $('#idea-group-filter');
+  if (groupFilter?.open && !event.target.closest('#idea-group-filter')) groupFilter.open = false;
+  if (relationshipDraft?.conflictMenuOpen && !event.target.closest('.split-button')) {
+    relationshipDraft.conflictMenuOpen = false;
+    if (modal.open) (relationshipDraft.screen === 'flow' ? renderRelationshipFlow : renderConflictBuilder)();
+  }
   const actionTarget = event.target.closest('[data-action]');
   if (actionTarget) {
     handleAction(actionTarget);

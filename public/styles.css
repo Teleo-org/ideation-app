@@ -210,7 +210,7 @@ a { color: var(--primary-dark); }
 .field { display: grid; gap: 7px; margin: 18px 0; font-weight: 700; }
 .field small { font-weight: 500; color: var(--muted); }
 .field input, .field select, .field textarea, .compact-field select, .search-box input, .theme-picker select, .inspector input, .inspector select, .modal input, .modal select, .modal textarea {
-  width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--input-bg); color: var(--text); outline: none;
+  width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--input-bg); color: var(--text); outline: none; font-weight: 400;
 }
 .markdown-editor { width: 100%; min-height: 180px; resize: vertical; line-height: 1.5; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 400; }
 .markdown-editor-shell .tiny { margin: 5px 0 0; font-weight: 500; }
