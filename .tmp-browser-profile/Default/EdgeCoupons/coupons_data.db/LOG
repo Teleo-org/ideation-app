@@ -1,0 +1,5 @@
+2026/07/27-12:55:45.638 660c Creating DB C:\Users\Jesus\Documents\Coding\Ideation\app\.tmp-browser-profile\Default\EdgeCoupons/coupons_data.db since it was missing.
+2026/07/27-12:55:45.714 660c Reusing MANIFEST C:\Users\Jesus\Documents\Coding\Ideation\app\.tmp-browser-profile\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/07/27-12:55:46.039 5c1c Level-0 table #5: started
+2026/07/27-12:55:46.045 5c1c Level-0 table #5: 683041 bytes OK
+2026/07/27-12:55:46.050 5c1c Delete type=0 #3

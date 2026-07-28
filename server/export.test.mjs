@@ -210,7 +210,7 @@ test('parseImportMarkdown creates ideas from markdown', () => {
   parseImportMarkdown(md, state);
   assert.equal(state.ideas.length, 1);
   assert.equal(state.ideas[0].title, 'New Idea');
-  assert.ok(state.ideas[0].detailsHtml.includes('Some details'));
+  assert.ok(state.ideas[0].detailsMarkdown.includes('Some details'));
 });
 
 test('parseImportMarkdown creates implementations with linked ideas', () => {

@@ -1,5 +1,9 @@
 name: CI and production deploy
 
+concurrency:
+  group: ideation-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 on:
   pull_request:
   push:
@@ -19,10 +23,20 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm audit --omit=dev --audit-level=high
+      - name: Validate migrations locally
+        run: npx wrangler d1 migrations apply ideation-workbench --local --persist-to .wrangler/ci
+
+  validate-nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: nix flake check --no-build
 
   deploy-production:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: validate
+    needs: [validate, validate-nix]
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -42,12 +56,9 @@ jobs:
       - run: npm run build
       - name: Apply D1 migrations
         run: npx wrangler d1 migrations apply ideation-workbench --remote
-      - name: Create or update Worker
+      - name: Deploy Worker
         run: npx wrangler deploy
-      - name: Set Worker runtime secrets
+      - name: Smoke test production
         run: |
-          printf '%s' "$CLERK_PUBLISHABLE_KEY" | npx wrangler secret put CLERK_PUBLISHABLE_KEY
-          printf '%s' "$CLERK_SECRET_KEY" | npx wrangler secret put CLERK_SECRET_KEY
-          printf '%s' "$CLERK_WEBHOOK_SIGNING_SECRET" | npx wrangler secret put CLERK_WEBHOOK_SIGNING_SECRET
-      - name: Deploy configured Worker
-        run: npx wrangler deploy
+          curl --fail --retry 5 --retry-delay 2 "$APP_ORIGIN/api/config"
+          curl --fail --retry 5 --retry-delay 2 "$APP_ORIGIN/"

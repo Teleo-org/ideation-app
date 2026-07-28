@@ -1,3 +1,5 @@
+import { markdownToSafeHtml, detailsText } from './markdown.mjs';
+
 const root = document.querySelector('#shared-project');
 const slug = decodeURIComponent(location.pathname.slice(1));
 let project; let share; let localView;
@@ -7,13 +9,15 @@ function byId(list, itemId) { return (list || []).find((item) => item.id === ite
 function ordered(items) { return [...items].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || String(a.title).localeCompare(String(b.title))); }
 function unique(values) { return [...new Set(values)]; }
 
-function detailsHtml(value) {
-  const holder = document.createElement('div'); holder.innerHTML = value || '';
-  holder.querySelectorAll('script, style, iframe, object, embed').forEach((node) => node.remove());
-  holder.querySelectorAll('*').forEach((node) => [...node.attributes].forEach((attribute) => {
-    if (attribute.name.startsWith('on') || (attribute.name === 'href' && /^javascript:/i.test(attribute.value))) node.removeAttribute(attribute.name);
-  }));
-  return holder.innerHTML;
+function attachmentMetadataHtml(item) {
+  const attachments = item.attachments || [];
+  if (!attachments.length) return '';
+  const rows = attachments.map((attachment) => {
+    const size = Number(attachment.size || 0);
+    const sizeLabel = size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.ceil(size / 1024))} KB`;
+    return `<li>${escapeHtml(attachment.name || 'Attachment')} <span class="muted">(${escapeHtml(attachment.mime || 'file')}, ${sizeLabel})</span></li>`;
+  }).join('');
+  return `<div class="shared-attachments"><strong>Attachments</strong><ul>${rows}</ul><p class="tiny muted">Files remain private; this share includes metadata only.</p></div>`;
 }
 
 function themeImplementations() {
@@ -25,7 +29,8 @@ function themeImplementations() {
 }
 
 function initialView() {
-  const saved = structuredClone(project.uiByTheme?.[project.activeThemeId] || {});
+  if (share.view?.themeId && byId(project.themes, share.view.themeId)) project.activeThemeId = share.view.themeId;
+  const saved = structuredClone(share.view || project.uiByTheme?.[project.activeThemeId] || {});
   const effectiveIds = themeImplementations().map((item) => item.id);
   saved.visibleImplementationIds = unique((saved.visibleImplementationIds?.length ? saved.visibleImplementationIds : effectiveIds).filter((id) => effectiveIds.includes(id)));
   saved.previousVisibleImplementationIds ||= []; saved.expandedIdeaIds ||= []; saved.expandedImplementationIds ||= [];
@@ -52,7 +57,7 @@ function render() {
   const locked = new Set(localView.lockedImplementationIds); const visible = new Set(localView.visibleImplementationIds);
   const groups = new Set(localView.ideaGroupFilterIds); const search = localView.search.trim().toLowerCase();
   const conflictBlocked = (item) => (project.conflicts || []).some((conflict) => conflict.implementationIds?.includes(item.id) && conflict.implementationIds.every((id) => id === item.id || locked.has(id)));
-  const ideas = ordered(project.ideas || []).filter((idea) => (!groups.size || (groups.has('__ungrouped__') && !(idea.groupIds || []).length) || (idea.groupIds || []).some((id) => groups.has(id))) && (!search || `${idea.title} ${idea.detailsHtml || ''}`.toLowerCase().includes(search) || implementations.some((item) => item.ideaIds?.includes(idea.id) && `${item.title} ${item.detailsHtml || ''}`.toLowerCase().includes(search))));
+  const ideas = ordered(project.ideas || []).filter((idea) => (!groups.size || (groups.has('__ungrouped__') && !(idea.groupIds || []).length) || (idea.groupIds || []).some((id) => groups.has(id))) && (!search || `${idea.title} ${detailsText(idea)}`.toLowerCase().includes(search) || implementations.some((item) => item.ideaIds?.includes(idea.id) && `${item.title} ${detailsText(item)}`.toLowerCase().includes(search))));
   document.title = `${project.meta?.name || 'Shared project'} · Ideation Workbench`;
   root.innerHTML = `<div class="app"><header class="topbar share-topbar"><div class="brand-inline"><div class="brand-mark small">IW</div><div><strong>${escapeHtml(project.meta?.name || 'Untitled project')}</strong><div class="tiny muted">Read-only ${share.mode === 'live' ? 'live view' : 'snapshot'}</div></div></div><div class="share-meta"><strong>${escapeHtml(theme?.name || 'Core')}</strong><div class="share-readonly">Theme</div></div></header><section class="filterbar share-filterbar"><label class="search-box"><span class="sr-only">Search</span><input id="shared-search" type="search" placeholder="Search ideas and implementations…" value="${escapeHtml(localView.search)}" /></label>${groupPicker()}<button class="button ghost compact" data-view-action="show-all">Show all</button><button class="button ghost compact" data-view-action="hide-all">Hide all</button><button class="button ghost compact" data-view-action="restore">Restore previous</button><label class="toggle-label" title="Shows implementations that would complete a conflict with the current locked view."><input id="shared-show-excluded" type="checkbox" ${localView.showExcluded ? 'checked' : ''} /> Show excluded</label></section><main class="board-wrap share-board-wrap"><div class="board" id="shared-board"></div></main></div>`;
   const board = document.querySelector('#shared-board');
@@ -62,7 +67,15 @@ function render() {
     const linked = ordered(implementations.filter((item) => item.ideaIds?.includes(idea.id)));
     const shown = linked.filter((item) => visible.has(item.id) && (localView.showExcluded || !conflictBlocked(item)));
     const hidden = linked.filter((item) => !visible.has(item.id)); const expanded = localView.expandedIdeaIds.includes(idea.id);
-    return `<section class="idea-card" style="${cardStyle(idea)}"><header class="idea-header"><h2 class="idea-title">${escapeHtml(idea.title || 'Untitled idea')}</h2><div class="idea-control-row"><div class="idea-group-dots">${ideaGroups.map((group) => `<span class="color-dot" title="${escapeHtml(group.name || 'Untitled group')}" style="background:${escapeHtml(group.color || '#d5dbe5')}"></span>`).join('')}</div><div class="idea-actions"><button class="icon-button" data-view-action="idea-details" data-id="${idea.id}" title="Toggle details">${expanded ? '▴' : '▾'}</button></div></div></header>${expanded && idea.detailsHtml ? `<div class="idea-details">${detailsHtml(idea.detailsHtml)}</div>` : ''}<div class="implementation-list">${shown.length ? shown.map((item) => { const detailOpen = localView.expandedImplementationIds.includes(item.id); return `<article class="impl-row share-implementation ${locked.has(item.id) ? 'locked' : ''}"><div class="impl-main"><strong class="impl-title-button">${escapeHtml(item.title || 'Untitled implementation')}</strong><div class="impl-subline">${!item.directInTheme ? '<span class="micro-badge">Inherited</span>' : ''}${locked.has(item.id) ? '<span class="micro-badge">Locked</span>' : ''}${conflictBlocked(item) ? '<span class="micro-badge warning">Conflict</span>' : ''}</div></div><div class="impl-actions"><button data-view-action="implementation-details" data-id="${item.id}" title="Toggle details">${detailOpen ? '▴' : '▾'}</button></div>${detailOpen && item.detailsHtml ? `<div class="impl-details">${detailsHtml(item.detailsHtml)}</div>` : ''}</article>`; }).join('') : `<div class="empty-impl">${linked.length ? 'All implementations are hidden or excluded.' : 'No implementations in this theme.'}</div>`}${hidden.length ? `<div class="hidden-strip">${hidden.map((item) => `<span class="hidden-chip">${escapeHtml(item.title)} <button data-view-action="show-one" data-id="${item.id}">show</button></span>`).join('')}</div>` : ''}</div></section>`;
+    const implementationRows = shown.length ? shown.map((item) => {
+      const detailOpen = localView.expandedImplementationIds.includes(item.id);
+      const detailContent = detailOpen && (detailsText(item) || item.attachments?.length)
+        ? `<div class="impl-details">${markdownToSafeHtml(detailsText(item))}${attachmentMetadataHtml(item)}</div>`
+        : '';
+      return `<article class="impl-row share-implementation ${locked.has(item.id) ? 'locked' : ''}"><div class="impl-main"><strong class="impl-title-button">${escapeHtml(item.title || 'Untitled implementation')}</strong><div class="impl-subline">${!item.directInTheme ? '<span class="micro-badge">Inherited</span>' : ''}${locked.has(item.id) ? '<span class="micro-badge">Locked</span>' : ''}${conflictBlocked(item) ? '<span class="micro-badge warning">Conflict</span>' : ''}</div></div><div class="impl-actions"><button data-view-action="implementation-details" data-id="${item.id}" title="Toggle details">${detailOpen ? '▴' : '▾'}</button></div>${detailContent}</article>`;
+    }).join('') : `<div class="empty-impl">${linked.length ? 'All implementations are hidden or excluded.' : 'No implementations in this theme.'}</div>`;
+    const hiddenRows = hidden.length ? `<div class="hidden-strip">${hidden.map((item) => `<span class="hidden-chip">${escapeHtml(item.title)} <button data-view-action="show-one" data-id="${item.id}">show</button></span>`).join('')}</div>` : '';
+    return `<section class="idea-card" style="${cardStyle(idea)}"><header class="idea-header"><h2 class="idea-title">${escapeHtml(idea.title || 'Untitled idea')}</h2><div class="idea-control-row"><div class="idea-group-dots">${ideaGroups.map((group) => `<span class="color-dot" title="${escapeHtml(group.name || 'Untitled group')}" style="background:${escapeHtml(group.color || '#d5dbe5')}"></span>`).join('')}</div><div class="idea-actions"><button class="icon-button" data-view-action="idea-details" data-id="${idea.id}" title="Toggle details">${expanded ? '▴' : '▾'}</button></div></div></header>${expanded && detailsText(idea) ? `<div class="idea-details">${markdownToSafeHtml(detailsText(idea))}</div>` : ''}<div class="implementation-list">${implementationRows}${hiddenRows}</div></section>`;
   }).join('');
 }
 

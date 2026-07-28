@@ -4,7 +4,8 @@ Ideation Workbench is a private, portable planning board hosted at `https://idea
 
 - **Guest mode:** runs in the browser without sign-up or server-side storage.
 - **Cloud mode:** Clerk-authenticated users receive an isolated D1-backed workspace and R2-backed attachments.
-- **Portability:** projects export as readable `ideation-project.json` directories or ZIP archives suitable for source control. Markdown import/export remains available for sharing prose.
+- **Portability:** V2 project archives contain a validated project document, attachment files, and SHA-256 checksums. V1 project documents remain importable.
+- **Self-hosting:** the same client and API contracts run on NixOS with SQLite, filesystem attachments, and OIDC or trusted-proxy identity.
 
 The first 20 self-service Clerk registrations receive cloud storage permanently. Clerk invitations bypass that cap. Guest projects are never uploaded until a signed-in user chooses to import them.
 
@@ -17,6 +18,10 @@ npm run dev
 ```
 
 `npm run dev` builds browser assets and starts the Cloudflare Worker locally. Copy `.dev.vars.example` to `.dev.vars` and add development Clerk values before testing authenticated paths.
+
+`npm run dev:nixos` runs the provider-neutral Node adapter. It accepts identity
+only from configured trusted proxy addresses. See
+[docs/NIXOS.md](docs/NIXOS.md) for the NixOS module and OIDC proxy setup.
 
 ## Deployment
 
@@ -33,4 +38,8 @@ Provisioning, required secrets, Cloudflare permissions, and Clerk setup are docu
 | Build | `npm run build` |
 | Validate | `npm run check` |
 | Local Worker | `npm run dev` |
-| Deploy target | Cloudflare Worker with D1 and R2 |
+| Local NixOS adapter | `npm run dev:nixos` |
+| Back up NixOS data | `npm run backup:nixos -- /path/to/backup` |
+| Restore NixOS data | `npm run restore:nixos -- /path/to/backup` |
+| Convert legacy folder | `npm run migrate:legacy -- project.sqlite project.zip` |
+| Deploy targets | Cloudflare Worker/D1/R2 or NixOS/SQLite/filesystem |

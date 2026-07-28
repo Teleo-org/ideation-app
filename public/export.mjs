@@ -84,7 +84,8 @@ export function generateExportMarkdown(state) {
       const groups = (idea.groupIds || []).map((gid) => byId(state.ideaGroups, gid)).filter(Boolean);
       h(3, idea.title);
       if (groups.length) p(`**Groups:** ${groups.map((g) => g.name || 'Untitled').join(', ')}`);
-      if (idea.detailsHtml) lines.push(htmlToMarkdown(idea.detailsHtml));
+      if (idea.detailsMarkdown) lines.push(idea.detailsMarkdown);
+      else if (idea.detailsHtml) lines.push(htmlToMarkdown(idea.detailsHtml));
       blank();
     }
     hr();
@@ -104,7 +105,8 @@ export function generateExportMarkdown(state) {
       if (groups.length) p(`**Groups:** ${groups.map((g) => g.name || 'Untitled').join(', ')}`);
       if (relConflicts.length) p(`**Conflicts:** ${relConflicts.map((c) => c.name).join(', ')}`);
       if ((impl.attachments || []).length) p(`**Attachments:** ${impl.attachments.map((a) => `${a.name}${a.size ? ` (${(a.size / 1024).toFixed(0)} KB)` : ''}`).join(', ')}`);
-      if (impl.detailsHtml) lines.push(htmlToMarkdown(impl.detailsHtml));
+      if (impl.detailsMarkdown) lines.push(impl.detailsMarkdown);
+      else if (impl.detailsHtml) lines.push(htmlToMarkdown(impl.detailsHtml));
       blank();
     }
     hr();
@@ -175,7 +177,8 @@ export function generateExportMarkdown(state) {
         const overridden = byId(state.conflicts, conflict.overridesConflictId);
         if (overridden) p(`*Overrides: ${overridden.name}*`);
       }
-      if (conflict.detailsHtml) lines.push(htmlToMarkdown(conflict.detailsHtml));
+      if (conflict.detailsMarkdown) lines.push(conflict.detailsMarkdown);
+      else if (conflict.detailsHtml) lines.push(htmlToMarkdown(conflict.detailsHtml));
       blank();
     }
     hr();
@@ -377,9 +380,9 @@ export function parseImportMarkdown(md, state) {
       const groupIds = groupNames.map((g) => matchOrCreateGroup(state.ideaGroups, g));
       let details = entry.content;
       details = details.replace(/^\*\*Groups\*\*\s*:.+$/m, '').trim();
-      const detailsHtml = markdownToHtml(details);
+      const detailsMarkdown = details;
       const id = crypto.randomUUID();
-      state.ideas.push({ id, title, detailsHtml, groupIds, sortOrder: state.ideas.length });
+      state.ideas.push({ id, title, detailsMarkdown, groupIds, sortOrder: state.ideas.length });
       importedIds.ideas.push(id);
     }
   }
@@ -395,14 +398,14 @@ export function parseImportMarkdown(md, state) {
         const existing = state.ideas.find((i) => i.title === n);
         if (existing) return existing.id;
         const id = crypto.randomUUID();
-        state.ideas.push({ id, title: n, detailsHtml: '', groupIds: [], sortOrder: state.ideas.length });
+        state.ideas.push({ id, title: n, detailsMarkdown: '', groupIds: [], sortOrder: state.ideas.length });
         importedIds.ideas.push(id);
         return id;
       });
       const themeIds = themeNames.map((n) => matchOrCreateTheme(state.themes, n));
       const groupIds = groupIdNames.map((g) => matchOrCreateGroup(state.implementationGroups, g));
       const id = crypto.randomUUID();
-      state.implementations.push({ id, title, detailsHtml: markdownToHtml(entry.content || ''), ideaIds, themeIds, groupIds, attachments: [], sortOrder: state.implementations.length });
+      state.implementations.push({ id, title, detailsMarkdown: entry.content || '', ideaIds, themeIds, groupIds, attachments: [], sortOrder: state.implementations.length });
       importedIds.implementations.push(id);
     }
   }

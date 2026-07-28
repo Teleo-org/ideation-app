@@ -1,22 +1,28 @@
 {
   "name": "ideation-workbench",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "description": "A private-by-default ideation workbench with portable guest projects and Clerk-backed cloud workspaces.",
   "scripts": {
     "build": "node scripts/build.mjs",
     "dev": "npm run build && wrangler dev",
+    "dev:nixos": "npm run build && node --no-warnings server/node-adapter.mjs",
     "start": "npm run dev",
+    "start:nixos": "node --no-warnings server/node-adapter.mjs",
+    "backup:nixos": "node --no-warnings server/node-maintenance.mjs backup",
+    "restore:nixos": "node --no-warnings server/node-maintenance.mjs restore",
+    "migrate:legacy": "node --no-warnings scripts/export-legacy-project.mjs",
     "test": "node --test server/*.test.mjs",
-    "check": "npm run test && npm run build"
+    "check:syntax": "node --check src/worker.mjs && node --check server/node-adapter.mjs && node --check server/node-repositories.mjs && node --check server/node-maintenance.mjs",
+    "check": "npm run check:syntax && npm run test && npm run build"
   },
   "engines": {
     "node": ">=22.5.0"
   },
   "dependencies": {
-    "@clerk/backend": "^3.13.1",
-    "@clerk/clerk-js": "^6.25.8",
+    "@clerk/backend": "^3.13.2",
+    "@clerk/clerk-js": "^6.25.10",
     "fflate": "^0.8.3",
     "svix": "^1.99.1"
   },
