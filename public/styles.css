@@ -263,7 +263,7 @@ a { color: var(--primary-dark); }
 .group-filter { position: relative; min-width: 180px; }
 .group-filter summary { min-height: 34px; display: flex; align-items: center; padding: 5px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--input-bg); color: var(--text); font-size: 13px; text-transform: none; letter-spacing: 0; cursor: pointer; }
 .group-filter[open] summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-#idea-group-filter-options { position: absolute; top: 100%; left: 0; z-index: 35; width: max-content; min-width: 100%; max-width: min(340px, calc(100vw - 32px)); padding: 5px; border: 1px solid var(--border); border-radius: 0 0 9px 9px; background: var(--surface); box-shadow: var(--shadow); }
+.group-filter > div { position: absolute; top: 100%; left: 0; z-index: 35; width: max-content; min-width: 100%; max-width: min(340px, calc(100vw - 32px)); padding: 5px; border: 1px solid var(--border); border-radius: 0 0 9px 9px; background: var(--surface); box-shadow: var(--shadow); }
 .group-filter-row { display: grid; grid-template-columns: minmax(0, 1fr) 30px; gap: 4px; align-items: center; }
 .group-filter-row > button:first-child { min-width: 0; padding: 7px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text); overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .group-filter-row > button:first-child:hover { background: var(--surface-3); }

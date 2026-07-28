@@ -6,6 +6,7 @@ const index = readFileSync(new URL('../public/index.html', import.meta.url), 'ut
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const shared = readFileSync(new URL('../public/share.js', import.meta.url), 'utf8');
 const controls = readFileSync(new URL('../public/board-controls.mjs', import.meta.url), 'utf8');
+const styles = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
 
 test('main board exposes shared sort controls and a dedicated display settings gear', () => {
   const sortIndex = controls.indexOf('idea-sort');
@@ -32,6 +33,7 @@ test('shared and private boards use the same board controls component', () => {
   assert.match(shared, /from '\.\/board-controls\.mjs'/);
   assert.match(shared, /boardControlsHtml\(\{ view: localView, groups: project\.ideaGroups \|\| \[\], shared: true \}\)/);
   assert.match(shared, /shared-idea-sort/);
+  assert.match(styles, /\.group-filter > div \{ position: absolute/);
 });
 
 test('Clerk bootstrap has a visible loading state, timeout, retry, and first-party loader', () => {
