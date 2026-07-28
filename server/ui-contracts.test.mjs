@@ -54,3 +54,9 @@ test('private client shell contains every startup control host used by app boots
   assert.match(app, /\$\('#board-controls'\)\.addEventListener\('input'/);
   assert.match(app, /\$\('#board-controls'\)\.addEventListener\('change'/);
 });
+
+test('shared controls preserve the private search wiring and use a distinct shared search ID', () => {
+  assert.match(controls, /const searchId = shared \? 'shared-search' : 'search-input'/);
+  assert.match(app, /event\.target\.id === 'search-input'/);
+  assert.match(shared, /event\.target\.id === 'shared-search'/);
+});
