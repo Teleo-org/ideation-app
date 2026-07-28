@@ -14,7 +14,7 @@
     "restore:nixos": "node --no-warnings server/node-maintenance.mjs restore",
     "migrate:legacy": "node --no-warnings scripts/export-legacy-project.mjs",
     "test": "node --test server/*.test.mjs",
-    "check:syntax": "node --check src/worker.mjs && node --check server/node-adapter.mjs && node --check server/node-repositories.mjs && node --check server/node-maintenance.mjs",
+    "check:syntax": "node --check src/worker.mjs && node --check server/node-adapter.mjs && node --check server/node-repositories.mjs && node --check server/node-maintenance.mjs && node --check public/app.js && node --check public/share.js && node --check public/board-controls.mjs",
     "check": "npm run check:syntax && npm run test && npm run build"
   },
   "engines": {

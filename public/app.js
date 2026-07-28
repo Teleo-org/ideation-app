@@ -18,6 +18,7 @@ import { SaveCoordinator } from './save-coordinator.mjs';
 import { createDraftJournal } from './draft-journal.mjs';
 import { storeGuestAttachment, hydrateGuestAttachments, deleteGuestAttachment } from './guest-attachments.mjs';
 import { markdownToSafeHtml, detailsText } from './markdown.mjs';
+import { boardControlsHtml } from './board-controls.mjs';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -453,6 +454,19 @@ function openMobileFilters() {
 
 function renderFilters() {
   const v = view();
+  $('#board-controls').innerHTML = boardControlsHtml({ view: v, groups: state.ideaGroups, include: { fontSettings: true, lockSummary: true } });
+  const selectedControl = v.selectedImplementationIds.filter((id) => byId(state.implementations, id));
+  const lockSelectedControl = $('#lock-selected');
+  if (lockSelectedControl) {
+    lockSelectedControl.hidden = !selectedControl.length;
+    const allManual = selectedControl.every((id) => v.manuallyLockedImplementationIds.includes(id));
+    const conflicts = conflictsForTheme().filter((conflict) => selectedControl.some((id) => conflict.implementationIds.includes(id))).map((conflict) => conflict.name).slice(0, 3);
+    const required = requirements().filter((item) => selectedControl.includes(item.fromImplementationId)).map((item) => `${byId(state.implementations, item.fromImplementationId)?.title || 'Implementation'} → ${byId(state.implementations, item.toImplementationId)?.title || 'implementation'}`).slice(0, 3);
+    lockSelectedControl.textContent = `${allManual ? 'Unlock' : 'Lock'} selected (${selectedControl.length})`;
+    lockSelectedControl.title = `${allManual ? 'Unlock selected implementations' : 'Lock selected implementations and their requirements'}${conflicts.length ? `\nConflicts: ${conflicts.join(', ')}` : ''}${required.length ? `\nRequirements: ${required.join(', ')}` : ''}`;
+  }
+  $('#relationship-button').hidden = selectedControl.length < 2;
+  return;
   $('#search-input').value = v.search;
   $('#show-excluded').checked = v.showExcluded;
   $('#idea-sort').value = v.ideaSort;
@@ -1736,7 +1750,7 @@ function handleAction(target) {
   else if (action === 'open-more-menu') openMoreMenu();
   else if (action === 'open-command-palette') openCommandPalette();
   else if (action === 'open-display-settings') openDisplaySettings();
-  else if (action === 'toggle-idea-sort-direction') { v.ideaSortDirection = v.ideaSortDirection === 'desc' ? 'asc' : 'desc'; renderFilters(); renderBoard(); markDirty(); }
+  else if (action === 'toggle-idea-sort-direction' || action === 'toggle-sort-direction') { v.ideaSortDirection = v.ideaSortDirection === 'desc' ? 'asc' : 'desc'; renderFilters(); renderBoard(); markDirty(); }
   else if (action === 'toggle-board-density') {
     boardDensity = boardDensity === 'compact' ? 'detailed' : 'compact';
     localStorage.setItem('ideation-workbench:board-density', boardDensity);
@@ -1789,8 +1803,8 @@ function handleAction(target) {
   else if (action === 'toggle-impl-details') { v.expandedImplementationIds = v.expandedImplementationIds.includes(itemId) ? v.expandedImplementationIds.filter((id) => id !== itemId) : [...v.expandedImplementationIds, itemId]; render(); markDirty(); }
   else if (action === 'hide-implementation') { v.previousVisibleImplementationIds = [...v.visibleImplementationIds]; v.visibleImplementationIds = v.visibleImplementationIds.filter((id) => id !== itemId); render(); markDirty(); }
   else if (action === 'show-implementation') { v.previousVisibleImplementationIds = [...v.visibleImplementationIds]; v.visibleImplementationIds = unique([...v.visibleImplementationIds, itemId]); render(); markDirty(); }
-  else if (action === 'filter-idea-group-only') { v.ideaGroupFilterIds = target.dataset.id === 'all' ? [] : [target.dataset.id]; render(); markDirty(); }
-  else if (action === 'toggle-idea-group-filter') { const groupId = target.dataset.id; v.ideaGroupFilterIds = v.ideaGroupFilterIds.includes(groupId) ? v.ideaGroupFilterIds.filter((id) => id !== groupId) : [...v.ideaGroupFilterIds, groupId]; renderFilters(); $('#idea-group-filter').open = true; renderBoard(); markDirty(); }
+  else if (action === 'filter-idea-group-only' || action === 'group-only') { v.ideaGroupFilterIds = target.dataset.id === 'all' ? [] : [target.dataset.id]; render(); markDirty(); }
+  else if (action === 'toggle-idea-group-filter' || action === 'group-toggle') { const groupId = target.dataset.id; v.ideaGroupFilterIds = v.ideaGroupFilterIds.includes(groupId) ? v.ideaGroupFilterIds.filter((id) => id !== groupId) : [...v.ideaGroupFilterIds, groupId]; renderFilters(); $('#group-filter').open = true; renderBoard(); markDirty(); }
   else if (action === 'show-all') { v.previousVisibleImplementationIds = [...v.visibleImplementationIds]; v.visibleImplementationIds = implementationsForTheme().map((item) => item.id); render(); markDirty(); }
   else if (action === 'hide-all') { v.previousVisibleImplementationIds = [...v.visibleImplementationIds]; v.visibleImplementationIds = []; render(); markDirty(); }
   else if (action === 'restore-visible') { const previous = [...v.previousVisibleImplementationIds]; v.previousVisibleImplementationIds = [...v.visibleImplementationIds]; v.visibleImplementationIds = previous; render(); markDirty(); }
@@ -1987,8 +2001,8 @@ function handleAction(target) {
 }
 
 document.addEventListener('click', (event) => {
-  const groupFilter = $('#idea-group-filter');
-  if (groupFilter?.open && !event.target.closest('#idea-group-filter')) groupFilter.open = false;
+  const groupFilter = $('#group-filter');
+  if (groupFilter?.open && !event.target.closest('#group-filter')) groupFilter.open = false;
   if (relationshipDraft?.conflictMenuOpen && !event.target.closest('.split-button')) {
     relationshipDraft.conflictMenuOpen = false;
     if (modal.open) (relationshipDraft.screen === 'flow' ? renderRelationshipFlow : renderConflictBuilder)();
@@ -2050,9 +2064,14 @@ modal.addEventListener('cancel', (event) => {
   dismissModal();
 });
 
-$('#search-input').addEventListener('input', (event) => { view().search = event.target.value; renderBoard(); markDirty(); });
-$('#show-excluded').addEventListener('change', (event) => { view().showExcluded = event.target.checked; renderBoard(); markDirty(); });
-$('#idea-sort').addEventListener('change', (event) => { view().ideaSort = event.target.value; renderBoard(); markDirty(); });
+$('#board-controls').addEventListener('input', (event) => {
+  if (event.target.id === 'search-input') { view().search = event.target.value; renderBoard(); markDirty(); }
+  if (event.target.id === 'show-excluded') { view().showExcluded = event.target.checked; renderBoard(); markDirty(); }
+});
+$('#board-controls').addEventListener('change', (event) => {
+  if (event.target.id === 'show-excluded') { view().showExcluded = event.target.checked; renderBoard(); markDirty(); }
+  if (event.target.id === 'idea-sort') { view().ideaSort = event.target.value; renderBoard(); markDirty(); }
+});
 $('#inspector').addEventListener('submit', (event) => {
   if (event.target.id !== 'inspector-form') return;
   event.preventDefault();

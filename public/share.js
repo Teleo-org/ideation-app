@@ -1,4 +1,5 @@
 import { markdownToSafeHtml, detailsText } from './markdown.mjs';
+import { boardControlsHtml } from './board-controls.mjs';
 
 const root = document.querySelector('#shared-project');
 const slug = decodeURIComponent(location.pathname.slice(1));
@@ -35,7 +36,7 @@ function initialView() {
   saved.visibleImplementationIds = unique((saved.visibleImplementationIds?.length ? saved.visibleImplementationIds : effectiveIds).filter((id) => effectiveIds.includes(id)));
   saved.previousVisibleImplementationIds ||= []; saved.expandedIdeaIds ||= []; saved.expandedImplementationIds ||= [];
   saved.ideaGroupFilterIds ||= saved.ideaGroupFilter && saved.ideaGroupFilter !== 'all' ? [saved.ideaGroupFilter] : [];
-  saved.showExcluded ??= true; saved.search ||= ''; saved.lockedImplementationIds ||= [];
+  saved.showExcluded ??= true; saved.search ||= ''; saved.lockedImplementationIds ||= []; saved.ideaSort ||= 'manual'; saved.ideaSortDirection ||= 'asc';
   return saved;
 }
 
@@ -60,6 +61,19 @@ function render() {
   const ideas = ordered(project.ideas || []).filter((idea) => (!groups.size || (groups.has('__ungrouped__') && !(idea.groupIds || []).length) || (idea.groupIds || []).some((id) => groups.has(id))) && (!search || `${idea.title} ${detailsText(idea)}`.toLowerCase().includes(search) || implementations.some((item) => item.ideaIds?.includes(idea.id) && `${item.title} ${detailsText(item)}`.toLowerCase().includes(search))));
   document.title = `${project.meta?.name || 'Shared project'} · Ideation Workbench`;
   root.innerHTML = `<div class="app"><header class="topbar share-topbar"><div class="brand-inline"><div class="brand-mark small">IW</div><div><strong>${escapeHtml(project.meta?.name || 'Untitled project')}</strong><div class="tiny muted">Read-only ${share.mode === 'live' ? 'live view' : 'snapshot'}</div></div></div><div class="share-meta"><strong>${escapeHtml(theme?.name || 'Core')}</strong><div class="share-readonly">Theme</div></div></header><section class="filterbar share-filterbar"><label class="search-box"><span class="sr-only">Search</span><input id="shared-search" type="search" placeholder="Search ideas and implementations…" value="${escapeHtml(localView.search)}" /></label>${groupPicker()}<button class="button ghost compact" data-view-action="show-all">Show all</button><button class="button ghost compact" data-view-action="hide-all">Hide all</button><button class="button ghost compact" data-view-action="restore">Restore previous</button><label class="toggle-label" title="Shows implementations that would complete a conflict with the current locked view."><input id="shared-show-excluded" type="checkbox" ${localView.showExcluded ? 'checked' : ''} /> Show excluded</label></section><main class="board-wrap share-board-wrap"><div class="board" id="shared-board"></div></main></div>`;
+  ideas.sort((left, right) => {
+    if (localView.ideaSort === 'manual') return ordered([left, right])[0] === left ? -1 : 1;
+    const metric = (idea) => {
+      const linked = implementations.filter((item) => item.ideaIds?.includes(idea.id));
+      if (localView.ideaSort === 'implementations') return linked.length;
+      if (localView.ideaSort === 'locked') return linked.filter((item) => locked.has(item.id)).length;
+      return (project.conflicts || []).filter((conflict) => conflict.implementationIds?.some((id) => linked.some((item) => item.id === id))).length;
+    };
+    const result = metric(left) - metric(right);
+    const fallback = ordered([left, right])[0] === left ? -1 : 1;
+    return (localView.ideaSortDirection === 'desc' ? -result : result) || fallback;
+  });
+  document.querySelector('.share-filterbar').innerHTML = boardControlsHtml({ view: localView, groups: project.ideaGroups || [], shared: true });
   const board = document.querySelector('#shared-board');
   if (!ideas.length) { board.innerHTML = '<p class="muted">No ideas match this view.</p>'; return; }
   board.innerHTML = ideas.map((idea) => {
@@ -82,8 +96,15 @@ function render() {
 root.addEventListener('input', (event) => {
   if (event.target.id === 'shared-search') { localView.search = event.target.value; render(); }
   if (event.target.id === 'shared-show-excluded') { localView.showExcluded = event.target.checked; render(); }
+  if (event.target.id === 'shared-idea-sort') { localView.ideaSort = event.target.value; render(); }
+});
+root.addEventListener('change', (event) => {
+  if (event.target.id === 'shared-show-excluded') { localView.showExcluded = event.target.checked; render(); }
+  if (event.target.id === 'shared-idea-sort') { localView.ideaSort = event.target.value; render(); }
 });
 root.addEventListener('click', (event) => {
+  const groupFilter = root.querySelector('#shared-group-filter');
+  if (groupFilter?.open && !event.target.closest('#shared-group-filter')) groupFilter.open = false;
   const button = event.target.closest('[data-view-action]'); if (!button) return;
   const action = button.dataset.viewAction; const id = button.dataset.id;
   if (action === 'show-all') { localView.previousVisibleImplementationIds = [...localView.visibleImplementationIds]; localView.visibleImplementationIds = themeImplementations().map((item) => item.id); }
@@ -94,6 +115,7 @@ root.addEventListener('click', (event) => {
   if (action === 'implementation-details') localView.expandedImplementationIds = localView.expandedImplementationIds.includes(id) ? localView.expandedImplementationIds.filter((item) => item !== id) : [...localView.expandedImplementationIds, id];
   if (action === 'group-only') localView.ideaGroupFilterIds = id === 'all' ? [] : [id];
   if (action === 'group-toggle') localView.ideaGroupFilterIds = localView.ideaGroupFilterIds.includes(id) ? localView.ideaGroupFilterIds.filter((item) => item !== id) : [...localView.ideaGroupFilterIds, id];
+  if (action === 'toggle-sort-direction') localView.ideaSortDirection = localView.ideaSortDirection === 'desc' ? 'asc' : 'desc';
   render(); if (action === 'group-toggle') document.querySelector('#shared-group-filter').open = true;
 });
 
