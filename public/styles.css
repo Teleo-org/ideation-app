@@ -316,24 +316,26 @@ a { color: var(--primary-dark); }
 .micro-badge.conflict { background: var(--conflict-bg); color: var(--conflict-fg); border: 0; cursor: pointer; }
 .impl-actions { display: flex; flex-direction: column; gap: 3px; }
 .impl-actions button { width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text-3); font-size: 12px; }
-.impl-details { grid-column: 1 / -1; padding: 8px; border-radius: 9px; background: var(--surface-3); color: var(--text-2); line-height: 1.45; font-size: var(--implementation-details-size, 13px); }
+.impl-details { grid-column: 1 / -1; padding: 8px; border-radius: 9px; background: var(--surface-3); color: var(--text-2); line-height: 1.45; font-size: var(--implementation-details-size, 13px); white-space: normal; overflow-wrap: anywhere; }
 .impl-details p, .idea-details p { margin: 0 0 .7em; }
 .impl-details p:last-child, .idea-details p:last-child { margin-bottom: 0; }
 .impl-details h1, .impl-details h2, .impl-details h3, .impl-details h4 { margin: .8em 0 .35em; line-height: 1.25; }
 .impl-details ul, .impl-details ol, .idea-details ul, .idea-details ol { padding-left: 1.35em; }
+.impl-details blockquote, .idea-details blockquote { margin: .6em 0; padding-left: .75em; border-left: 3px solid var(--border-strong); color: var(--text-3); }
+.impl-details code, .idea-details code { padding: .08em .28em; border-radius: 4px; background: var(--surface-2); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .board.compact-density { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
 .board.compact-density .idea-header { padding: 8px 10px; gap: 4px; }
 .board.compact-density .idea-title { font-size: 15px; }
 .board.compact-density .implementation-list { padding: 6px; }
 .board.compact-density .impl-row { margin-bottom: 4px; padding: 6px; }
 .board.compact-density .impl-subline,
-.board.compact-density .idea-details,
-.board.compact-density .impl-details { display: none; }
+.board.compact-density .idea-details { display: none; }
 .drag-origin { visibility: hidden; }
 .drag-ghost { position: fixed !important; top: 0; left: 0; z-index: 100; margin: 0 !important; opacity: .92; pointer-events: none; box-shadow: 0 16px 36px rgba(17,24,39,.26) !important; transform-origin: top left; }
 .is-dragging-board, .is-dragging-board * { cursor: grabbing !important; }
 .empty-impl { padding: 14px 8px; text-align: center; color: var(--faint); font-size: 13px; }
 .hidden-strip { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-strong); }
+.hidden-implementation-summary { margin: 0 9px 9px; padding-top: 7px; }
 .hidden-chip { display: inline-flex; gap: 5px; align-items: center; padding: 4px 7px; border: 1px dashed var(--border-strong); border-radius: 999px; background: var(--surface-3); color: var(--faint); font-size: 11px; }
 .hidden-chip button { border: 0; background: none; color: var(--primary); font-weight: 800; padding: 0; }
 .focus-banner { margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--conflict-border); border-radius: 12px; background: var(--conflict-banner-bg); color: var(--conflict-banner-fg); }

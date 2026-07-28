@@ -602,7 +602,7 @@ function renderBoard() {
           </div>
         </header>
         ${expanded && detailsText(idea) ? `<div class="idea-details">${markdownToSafeHtml(detailsText(idea))}</div>` : ''}
-        ${allHidden ? `<div class="hidden-strip">${hiddenImplementations.map((implementation) => `<span class="hidden-chip">${escapeHtml(implementation.title)} <button data-action="show-implementation" data-id="${implementation.id}">show</button></span>`).join('')}</div>` : `<div class="implementation-list">
+        ${allHidden ? `<div class="hidden-strip hidden-implementation-summary" aria-label="Hidden implementations">${hiddenImplementations.map((implementation) => `<span class="hidden-chip">${escapeHtml(implementation.title)} <button data-action="show-implementation" data-id="${implementation.id}">show</button></span>`).join('')}</div>` : `<div class="implementation-list">
           ${sortedVisible.length ? sortedVisible.map((implementation) => renderImplementationRow(implementation, allConflicts, v)).join('') : `<div class="empty-impl">${implementations.length ? 'All implementations are hidden.' : 'No implementation in this theme.'}</div>`}
           ${hiddenImplementations.length ? `<div class="hidden-strip">${hiddenImplementations.map((implementation) => `<span class="hidden-chip">${escapeHtml(implementation.title)} <button data-action="show-implementation" data-id="${implementation.id}">show</button></span>`).join('')}</div>` : ''}
         </div>`}
