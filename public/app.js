@@ -64,7 +64,7 @@ const GUEST_BACKUP_KEY = 'ideation-workbench:guest-backup-before-cloud:v1';
 function guestDefaultState(name = 'My Ideation Project') {
   const themeId = id();
   const stamp = new Date().toISOString();
-  return { version: 2, meta: { id: id(), name, createdAt: stamp, updatedAt: stamp }, themes: [{ id: themeId, name: 'Core', parentId: null, hiddenInheritedImplementationIds: [], hiddenInheritedConflictIds: [] }], ideaGroups: [], implementationGroups: [], ideas: [], implementations: [], groupLinks: [], conflicts: [], requirements: [], savedViews: [], uiByTheme: { [themeId]: defaultView() }, activeThemeId: themeId };
+  return { version: 2, meta: { id: id(), name, createdAt: stamp, updatedAt: stamp }, displaySettings: { ideaTitleSize: 18, ideaDetailsSize: 14, implementationTitleSize: 14, implementationDetailsSize: 13 }, themes: [{ id: themeId, name: 'Core', parentId: null, hiddenInheritedImplementationIds: [], hiddenInheritedConflictIds: [] }], ideaGroups: [], implementationGroups: [], ideas: [], implementations: [], groupLinks: [], conflicts: [], requirements: [], savedViews: [], uiByTheme: { [themeId]: defaultView() }, activeThemeId: themeId };
 }
 
 function readGuestState() {
@@ -204,7 +204,7 @@ function defaultView() {
     lockedImplementationIds: [], visibleImplementationIds: [], previousVisibleImplementationIds: [],
     manuallyLockedImplementationIds: [], selectedImplementationIds: [],
     expandedIdeaIds: [], expandedImplementationIds: [], showExcluded: true, search: '', ideaGroupFilterIds: [],
-    knownImplementationIds: [],
+    knownImplementationIds: [], ideaSort: 'manual', ideaSortDirection: 'asc',
   };
 }
 
@@ -419,7 +419,7 @@ function openCommandPalette() {
 }
 
 function openMoreMenu() {
-  modalManager('More', `<div class="form-actions"><button class="button ghost compact" data-action="undo" ${undoStack.length ? '' : 'disabled'}>Undo</button><button class="button ghost compact" data-action="redo" ${redoStack.length ? '' : 'disabled'}>Redo</button></div><div class="manager-list"><button class="button secondary" data-action="open-command-palette">Commands <span class="tiny muted">Ctrl/⌘ K</span></button><button class="button secondary" data-action="toggle-board-density">Board density: ${boardDensity === 'compact' ? 'Compact' : 'Detailed'}</button><button class="button secondary" data-action="manage-structure">Structure</button><button class="button secondary" data-action="manage-saves">Saved views</button><button class="button secondary" data-action="open-mobile-filters">Filters and visibility</button><button class="button secondary" data-action="open-share-menu">Share</button><button class="button secondary" data-action="open-export-menu">Export</button><button class="button secondary" data-action="open-import-menu">Import</button><button class="button ghost" data-action="project-menu">Project settings</button></div>`);
+  modalManager('More', `<div class="form-actions"><button class="button ghost compact" data-action="undo" ${undoStack.length ? '' : 'disabled'}>Undo</button><button class="button ghost compact" data-action="redo" ${redoStack.length ? '' : 'disabled'}>Redo</button></div><div class="manager-list"><button class="button secondary" data-action="open-command-palette">Commands <span class="tiny muted">Ctrl/⌘ K</span></button><button class="button secondary" data-action="open-display-settings">Display and sorting</button><button class="button secondary" data-action="toggle-board-density">Board density: ${boardDensity === 'compact' ? 'Compact' : 'Detailed'}</button><button class="button secondary" data-action="manage-structure">Structure</button><button class="button secondary" data-action="manage-saves">Saved views</button><button class="button secondary" data-action="open-mobile-filters">Filters and visibility</button><button class="button secondary" data-action="open-share-menu">Share</button><button class="button secondary" data-action="open-export-menu">Export</button><button class="button secondary" data-action="open-import-menu">Import</button><button class="button ghost" data-action="project-menu">Project settings</button></div>`);
   if (state.savedViews.length >= 2) {
     const compare = document.createElement('button');
     compare.className = 'button secondary';
@@ -427,6 +427,17 @@ function openMoreMenu() {
     compare.textContent = 'Compare saved views';
     $('.manager-list', modalBody)?.insertBefore(compare, $('.manager-list [data-action="open-mobile-filters"]', modalBody));
   }
+}
+
+function openDisplaySettings() {
+  const settings = state.displaySettings || { ideaTitleSize: 18, ideaDetailsSize: 14, implementationTitleSize: 14, implementationDetailsSize: 13 };
+  const v = view();
+  modalForm('Display and sorting', `<div class="form-grid"><label class="field"><span>Idea title size</span><input name="ideaTitleSize" type="number" min="12" max="32" value="${settings.ideaTitleSize}" /></label><label class="field"><span>Idea details size</span><input name="ideaDetailsSize" type="number" min="10" max="24" value="${settings.ideaDetailsSize}" /></label><label class="field"><span>Implementation title size</span><input name="implementationTitleSize" type="number" min="10" max="28" value="${settings.implementationTitleSize}" /></label><label class="field"><span>Implementation details size</span><input name="implementationDetailsSize" type="number" min="10" max="22" value="${settings.implementationDetailsSize}" /></label><label class="field"><span>Sort ideas</span><select name="ideaSort"><option value="manual" ${v.ideaSort === 'manual' ? 'selected' : ''}>Manual order</option><option value="implementations" ${v.ideaSort === 'implementations' ? 'selected' : ''}>Implementation count</option><option value="locked" ${v.ideaSort === 'locked' ? 'selected' : ''}>Locked count</option><option value="conflicts" ${v.ideaSort === 'conflicts' ? 'selected' : ''}>Conflict count</option></select></label><label class="field"><span>Direction</span><select name="ideaSortDirection"><option value="asc" ${v.ideaSortDirection === 'asc' ? 'selected' : ''}>Ascending</option><option value="desc" ${v.ideaSortDirection === 'desc' ? 'selected' : ''}>Descending</option></select></label></div>`, async (form) => {
+    const data = new FormData(form); const clamp = (name, min, max, fallback) => Math.min(max, Math.max(min, Number(data.get(name)) || fallback));
+    state.displaySettings = { ideaTitleSize: clamp('ideaTitleSize', 12, 32, 18), ideaDetailsSize: clamp('ideaDetailsSize', 10, 24, 14), implementationTitleSize: clamp('implementationTitleSize', 10, 28, 14), implementationDetailsSize: clamp('implementationDetailsSize', 10, 22, 13) };
+    v.ideaSort = String(data.get('ideaSort')); v.ideaSortDirection = String(data.get('ideaSortDirection'));
+    closeModal(); render(); markDirty();
+  });
 }
 
 function openMobileFilters() {
@@ -507,6 +518,11 @@ function renderBoard() {
   const board = $('#board');
   board.classList.toggle('compact-density', boardDensity === 'compact');
   const v = view();
+  const display = state.displaySettings || {};
+  board.style.setProperty('--idea-title-size', `${display.ideaTitleSize || 18}px`);
+  board.style.setProperty('--idea-details-size', `${display.ideaDetailsSize || 14}px`);
+  board.style.setProperty('--implementation-title-size', `${display.implementationTitleSize || 14}px`);
+  board.style.setProperty('--implementation-details-size', `${display.implementationDetailsSize || 13}px`);
   const effective = implementationsForTheme();
   const effectiveById = new Map(effective.map((item) => [item.id, item]));
   const allConflicts = conflictsForTheme();
@@ -540,7 +556,17 @@ function renderBoard() {
         ...requirementText,
       ].filter(Boolean).join(' ').toLowerCase().includes(search);
     })
-    .sort(numberSort);
+    .sort((left, right) => {
+      if (v.ideaSort === 'manual') return numberSort(left, right);
+      const metric = (idea) => {
+        const linked = effective.filter((implementation) => implementation.ideaIds.includes(idea.id));
+        if (v.ideaSort === 'implementations') return linked.length;
+        if (v.ideaSort === 'locked') return linked.filter((implementation) => v.lockedImplementationIds.includes(implementation.id)).length;
+        return allConflicts.filter((conflict) => conflict.implementationIds.some((implementationId) => linked.some((implementation) => implementation.id === implementationId))).length;
+      };
+      const result = metric(left) - metric(right);
+      return (v.ideaSortDirection === 'desc' ? -result : result) || numberSort(left, right);
+    });
 
   if (!ideas.length) {
     board.innerHTML = state.ideas.length
@@ -552,6 +578,7 @@ function renderBoard() {
       const implementations = effective.filter((implementation) => implementation.ideaIds.includes(idea.id));
       const visibleImplementations = implementations.filter((implementation) => visible.has(implementation.id));
       const hiddenImplementations = implementations.filter((implementation) => !visible.has(implementation.id));
+      const allHidden = implementations.length > 0 && visibleImplementations.length === 0;
       const sortedVisible = [...visibleImplementations].sort((a, b) => implementationOrderForIdea(a, idea.id) - implementationOrderForIdea(b, idea.id) || numberSort(a, b));
       const expanded = v.expandedIdeaIds.includes(idea.id);
       return `<section class="idea-card" data-idea-id="${idea.id}" style="${ideaCardStyle(idea)}">
@@ -568,10 +595,10 @@ function renderBoard() {
           </div>
         </header>
         ${expanded && detailsText(idea) ? `<div class="idea-details">${markdownToSafeHtml(detailsText(idea))}</div>` : ''}
-        <div class="implementation-list">
+        ${allHidden ? '' : `<div class="implementation-list">
           ${sortedVisible.length ? sortedVisible.map((implementation) => renderImplementationRow(implementation, allConflicts, v)).join('') : `<div class="empty-impl">${implementations.length ? 'All implementations are hidden.' : 'No implementation in this theme.'}</div>`}
           ${hiddenImplementations.length ? `<div class="hidden-strip">${hiddenImplementations.map((implementation) => `<span class="hidden-chip">${escapeHtml(implementation.title)} <button data-action="show-implementation" data-id="${implementation.id}">show</button></span>`).join('')}</div>` : ''}
-        </div>
+        </div>`}
       </section>`;
     }).join('');
   }
@@ -597,7 +624,7 @@ function renderBoard() {
 
 function draggableBoardItem(target) {
   const handle = target.closest('.drag-handle');
-  if (!handle && target.closest('button, a, input, select, textarea, [contenteditable="true"], .rich-toolbar')) return null;
+  if (!handle) return null;
   const implementation = target.closest('.impl-row');
   if (implementation) return { kind: 'implementation', source: implementation, id: implementation.dataset.implementationId, ideaId: implementation.closest('.idea-card')?.dataset.ideaId };
   const idea = target.closest('.idea-card');
@@ -1674,6 +1701,7 @@ function handleAction(target) {
   else if (action === 'create-menu') openCreateMenu();
   else if (action === 'open-more-menu') openMoreMenu();
   else if (action === 'open-command-palette') openCommandPalette();
+  else if (action === 'open-display-settings') openDisplaySettings();
   else if (action === 'toggle-board-density') {
     boardDensity = boardDensity === 'compact' ? 'detailed' : 'compact';
     localStorage.setItem('ideation-workbench:board-density', boardDensity);

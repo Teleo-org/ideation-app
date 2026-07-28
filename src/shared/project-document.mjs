@@ -76,6 +76,8 @@ function normalizeView(value = {}) {
     search: string(value.search),
     ideaGroupFilterIds: stringIds(value.ideaGroupFilterIds || (value.ideaGroupFilter && value.ideaGroupFilter !== 'all' ? [value.ideaGroupFilter] : [])),
     knownImplementationIds: stringIds(value.knownImplementationIds),
+    ideaSort: ['manual', 'implementations', 'locked', 'conflicts'].includes(value.ideaSort) ? value.ideaSort : 'manual',
+    ideaSortDirection: value.ideaSortDirection === 'desc' ? 'desc' : 'asc',
   };
 }
 
@@ -85,12 +87,19 @@ export function migrateProjectDocument(input) {
   for (const key of arrays) if (!Array.isArray(state[key])) state[key] = [];
   state.meta = state.meta && typeof state.meta === 'object' ? state.meta : {};
   state.uiByTheme = state.uiByTheme && typeof state.uiByTheme === 'object' && !Array.isArray(state.uiByTheme) ? state.uiByTheme : {};
+  state.displaySettings = state.displaySettings && typeof state.displaySettings === 'object' ? state.displaySettings : {};
 
   state.version = PROJECT_DOCUMENT_VERSION;
   state.meta.id = string(state.meta.id);
   state.meta.name = string(state.meta.name, 'My Ideation Project').slice(0, 160);
   state.meta.createdAt = string(state.meta.createdAt, new Date().toISOString());
   state.meta.updatedAt = string(state.meta.updatedAt, state.meta.createdAt);
+  state.displaySettings = {
+    ideaTitleSize: Math.min(32, Math.max(12, Number(state.displaySettings.ideaTitleSize) || 18)),
+    ideaDetailsSize: Math.min(24, Math.max(10, Number(state.displaySettings.ideaDetailsSize) || 14)),
+    implementationTitleSize: Math.min(28, Math.max(10, Number(state.displaySettings.implementationTitleSize) || 14)),
+    implementationDetailsSize: Math.min(22, Math.max(10, Number(state.displaySettings.implementationDetailsSize) || 13)),
+  };
 
   state.themes = state.themes.map((item) => ({
     ...item,

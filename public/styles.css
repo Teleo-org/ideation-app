@@ -212,7 +212,7 @@ a { color: var(--primary-dark); }
 .field input, .field select, .field textarea, .compact-field select, .search-box input, .theme-picker select, .inspector input, .inspector select, .modal input, .modal select, .modal textarea {
   width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--input-bg); color: var(--text); outline: none;
 }
-.markdown-editor { width: 100%; min-height: 180px; resize: vertical; line-height: 1.5; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.markdown-editor { width: 100%; min-height: 180px; resize: vertical; line-height: 1.5; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 400; }
 .markdown-editor-shell .tiny { margin: 5px 0 0; font-weight: 500; }
 .field input:focus, .field select:focus, .field textarea:focus, .compact-field select:focus, .search-box input:focus, .theme-picker select:focus, .inspector input:focus, .inspector select:focus, .modal input:focus, .modal select:focus, .modal textarea:focus { border-color: var(--focus-border); box-shadow: 0 0 0 3px var(--focus-ring); }
 .path-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
@@ -279,7 +279,7 @@ a { color: var(--primary-dark); }
 .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 16px; align-content: start; }
 .idea-card { display: block; width: 100%; margin: 0; border: 1px solid var(--card-border); border-radius: 16px; overflow: hidden; box-shadow: 0 6px 18px var(--card-shadow); color: var(--idea-fg); background: var(--idea-bg); touch-action: pan-y; user-select: none; }
 .idea-header { padding: 12px 14px; display: grid; gap: 8px; }
-.idea-title { margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 18px; line-height: 1.25; text-shadow: 0 1px 1px rgba(255,255,255,.15), 0 1px 3px rgba(0,0,0,.15); }
+.idea-title { margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--idea-title-size, 18px); line-height: 1.25; text-shadow: 0 1px 1px rgba(255,255,255,.15), 0 1px 3px rgba(0,0,0,.15); }
 .idea-control-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .idea-group-dots { display: flex; align-items: center; gap: 5px; min-height: 20px; }
 .idea-group-dots .color-dot { margin: 0; }
@@ -290,7 +290,7 @@ a { color: var(--primary-dark); }
 .badge-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 .badge { display: inline-flex; align-items: center; gap: 4px; min-height: 22px; padding: 3px 7px; border-radius: 999px; background: var(--badge-bg); color: var(--badge-fg); border: 1px solid var(--card-border); font-size: 11px; font-weight: 800; backdrop-filter: blur(8px); }
 .badge.semantic { background: var(--semantic-badge-bg); color: var(--semantic-badge-fg); border-color: transparent; }
-.idea-details { margin: 0 12px 12px; padding: 10px 11px; border-radius: 11px; background: var(--idea-details-bg); color: var(--idea-details-fg); line-height: 1.45; }
+.idea-details { margin: 0 12px 12px; padding: 10px 11px; border-radius: 11px; background: var(--idea-details-bg); color: var(--idea-details-fg); line-height: 1.45; font-size: var(--idea-details-size, 14px); }
 .idea-details > :first-child, .impl-details > :first-child, .rich-content > :first-child { margin-top: 0; }
 .idea-details > :last-child, .impl-details > :last-child, .rich-content > :last-child { margin-bottom: 0; }
 .implementation-list { padding: 9px; border-top: 1px solid var(--card-border); background: var(--impl-list-bg); color: var(--text); }
@@ -305,14 +305,18 @@ a { color: var(--primary-dark); }
 .lock-button { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface); font-size: 13px; }
 .lock-button.active { background: var(--primary); border-color: var(--primary); color: white; }
 .impl-main { min-width: 0; }
-.impl-title-button { width: 100%; padding: 0; border: 0; background: none; text-align: left; color: var(--text); font-weight: 850; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.impl-title-button { width: 100%; padding: 0; border: 0; background: none; text-align: left; color: var(--text); font-weight: 850; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--implementation-title-size, 14px); }
 .impl-subline { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; margin-top: 3px; }
 .micro-badge { display: inline-flex; align-items: center; min-height: 16px; padding: 1px 4px; border-radius: 5px; background: var(--surface-2); color: var(--text-3); font-size: 9px; font-weight: 800; }
 .micro-badge.warning { background: var(--warning-bg); color: var(--warning-fg); }
 .micro-badge.conflict { background: var(--conflict-bg); color: var(--conflict-fg); border: 0; cursor: pointer; }
 .impl-actions { display: flex; flex-direction: column; gap: 3px; }
 .impl-actions button { width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text-3); font-size: 12px; }
-.impl-details { grid-column: 1 / -1; padding: 8px; border-radius: 9px; background: var(--surface-3); color: var(--text-2); line-height: 1.45; }
+.impl-details { grid-column: 1 / -1; padding: 8px; border-radius: 9px; background: var(--surface-3); color: var(--text-2); line-height: 1.45; font-size: var(--implementation-details-size, 13px); }
+.impl-details p, .idea-details p { margin: 0 0 .7em; }
+.impl-details p:last-child, .idea-details p:last-child { margin-bottom: 0; }
+.impl-details h1, .impl-details h2, .impl-details h3, .impl-details h4 { margin: .8em 0 .35em; line-height: 1.25; }
+.impl-details ul, .impl-details ol, .idea-details ul, .idea-details ol { padding-left: 1.35em; }
 .board.compact-density { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
 .board.compact-density .idea-header { padding: 8px 10px; gap: 4px; }
 .board.compact-density .idea-title { font-size: 15px; }

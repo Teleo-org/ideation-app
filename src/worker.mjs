@@ -166,6 +166,7 @@ async function saveProjectState(request, env, workspace, project) {
   const missingAttachments = [...referenced].filter((attachmentId) => !storedIds.has(attachmentId));
   if (missingAttachments.length) return json({ error: 'Project references attachments that have not been uploaded.', missingAttachments }, 422);
 
+  state.meta ||= {};
   state.meta.updatedAt = now();
   state.meta.name = String(state.meta.name || project.name).slice(0, 160);
   const nextRevision = currentRevision + 1;

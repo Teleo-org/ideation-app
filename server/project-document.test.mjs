@@ -23,6 +23,16 @@ test('V1 project documents migrate to validated V2 documents', () => {
   assert.deepEqual(state.uiByTheme.t1.ideaGroupFilterIds, []);
 });
 
+test('display settings and idea sorting persist with safe bounds', () => {
+  const state = validState();
+  state.displaySettings = { ideaTitleSize: 40, ideaDetailsSize: 8, implementationTitleSize: 17, implementationDetailsSize: 15 };
+  state.uiByTheme.t1 = { ideaSort: 'conflicts', ideaSortDirection: 'desc' };
+  const normalized = validateProjectDocument(state);
+  assert.deepEqual(normalized.displaySettings, { ideaTitleSize: 32, ideaDetailsSize: 10, implementationTitleSize: 17, implementationDetailsSize: 15 });
+  assert.equal(normalized.uiByTheme.t1.ideaSort, 'conflicts');
+  assert.equal(normalized.uiByTheme.t1.ideaSortDirection, 'desc');
+});
+
 test('validation rejects dangling references and theme cycles', () => {
   const state = validState();
   state.implementations[0].ideaIds = ['missing'];
@@ -36,4 +46,3 @@ test('validation rejects self requirements and incomplete conflicts', () => {
   state.conflicts[0].implementationIds = ['m1'];
   assert.throws(() => validateProjectDocument(state), /at least two implementations/);
 });
-
