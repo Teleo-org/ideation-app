@@ -5,14 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow, noarchive" />
   <title>Shared Ideation Project</title>
+  <link rel="stylesheet" href="/styles.css" />
   <style>
-    :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #f3f6fb; color: #172033; }
-    body { max-width: 960px; margin: 0 auto; padding: 32px 18px 60px; }
-    header, article { border: 1px solid #dce3ed; border-radius: 16px; background: #fff; box-shadow: 0 8px 24px rgba(17,24,39,.06); }
-    header { padding: 22px; margin-bottom: 18px; } h1 { margin: 0; font-size: clamp(26px, 5vw, 40px); } h2 { margin: 0 0 8px; font-size: 19px; }
-    .meta { margin: 7px 0 0; color: #64748b; } .ideas { display: grid; gap: 14px; } article { padding: 18px; } .implementations { display: grid; gap: 8px; margin-top: 14px; }
-    .implementation { padding: 11px; border-radius: 10px; background: #f5f7ff; } .implementation strong { display: block; } .details { line-height: 1.5; color: #344054; }
-    .notice, .empty { color: #64748b; } a { color: #315efb; } @media (prefers-color-scheme: dark) { :root { background: #0f1419; color: #e6edf6; } header, article { background: #161c26; border-color: #2a3340; box-shadow: none; } .meta, .notice, .empty { color: #aab4c4; } .details { color: #cbd5e1; } .implementation { background: #1d2740; } }
+    body { margin: 0; } .share-topbar { position: static; grid-template-columns: minmax(0, 1fr) auto; } .share-meta { text-align: right; } .share-board-wrap { overflow: visible; } .share-implementation { grid-template-columns: minmax(0, 1fr); cursor: default; } .share-implementation .impl-details { display: block; } .share-readonly { color: var(--muted); font-size: 12px; }
   </style>
 </head>
 <body>
