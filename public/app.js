@@ -32,6 +32,7 @@ const toast = $('#toast');
 let state = null;
 let projectPath = '';
 let currentInspectorId = null;
+let currentInspectorIdeaId = null;
 let focusedConflictId = null;
 let saveTimer = null;
 let modalSubmitHandler = null;
@@ -615,7 +616,7 @@ function renderBoard() {
       const expanded = v.expandedIdeaIds.includes(idea.id);
       return `<section class="idea-card" data-idea-id="${idea.id}" style="${ideaCardStyle(idea)}">
         <header class="idea-header">
-          <h2 class="idea-title"><button class="idea-title-button" data-action="toggle-idea-details" data-id="${idea.id}" aria-expanded="${expanded}" title="${expanded ? 'Hide' : 'Show'} idea details">${escapeHtml(idea.title)}</button></h2>
+          <h2 class="idea-title"><button class="idea-title-button" data-action="open-idea-inspector" data-id="${idea.id}" title="Open idea details">${escapeHtml(idea.title)}</button></h2>
           <div class="idea-control-row">
             <div class="idea-group-dots" aria-label="Idea groups">${groups.map((group) => `<span class="color-dot" title="${escapeHtml(group.name || 'Untitled group')}" style="background:${group.color || '#d5dbe5'}"></span>`).join('')}</div>
             <div class="idea-actions">
@@ -780,10 +781,27 @@ function stripHtml(value = '') {
 function renderInspector(resetScroll = false) {
   const workspace = $('.workspace');
   const inspector = $('#inspector');
+  const idea = currentInspectorIdeaId ? byId(state.ideas, currentInspectorIdeaId) : null;
+  if (idea) {
+    workspace.classList.add('has-inspector');
+    inspector.hidden = false;
+    const groups = idea.groupIds.map((groupId) => byId(state.ideaGroups, groupId)).filter(Boolean);
+    const implementationCount = state.implementations.filter((implementation) => implementation.ideaIds.includes(idea.id)).length;
+    inspector.innerHTML = `<form id="idea-inspector-form">
+      <div class="inspector-heading"><h2>Idea details</h2><button type="button" class="icon-button" data-action="close-inspector" aria-label="Close idea details">×</button></div>
+      <label class="field"><span>Title</span><input name="title" value="${escapeHtml(idea.title)}" required /></label>
+      <label class="field"><span>Details / notes</span>${richEditor(detailsText(idea), 'Describe this idea…')}</label>
+      <div class="inspector-actions"><button type="submit" class="button primary">Save details</button><button type="button" class="button ghost" data-action="edit-idea" data-id="${idea.id}">Edit groups</button><button type="button" class="button danger" data-action="delete-idea" data-id="${idea.id}">Delete</button></div>
+    </form>
+    <section class="inspector-section"><h3>At a glance</h3><div class="inspector-list"><div class="inspector-item"><span>Implementations</span><span>${implementationCount}</span></div><div class="inspector-item"><span>Idea groups</span><span>${escapeHtml(groups.map((group) => group.name || 'Untitled group').join(', ') || 'None')}</span></div></div></section>`;
+    if (resetScroll) inspector.scrollTop = 0;
+    return;
+  }
   const effective = implementationsForTheme();
   const implementation = currentInspectorId ? byId(state.implementations, currentInspectorId) : null;
   if (!implementation || !effective.some((item) => item.id === implementation.id)) {
     currentInspectorId = null;
+    currentInspectorIdeaId = null;
     workspace.classList.remove('has-inspector');
     inspector.hidden = true;
     inspector.innerHTML = '';
@@ -1863,8 +1881,9 @@ function handleAction(target) {
   }
   else if (action === 'clear-locks') { v.manuallyLockedImplementationIds = []; v.lockedImplementationIds = []; v.selectedImplementationIds = []; render(); markDirty(); }
   else if (action === 'clear-selection') { v.selectedImplementationIds = []; render(); markDirty(); }
-  else if (action === 'open-inspector') { currentInspectorId = itemId; renderInspector(true); }
-  else if (action === 'close-inspector') { currentInspectorId = null; renderInspector(); }
+  else if (action === 'open-inspector') { currentInspectorIdeaId = null; currentInspectorId = itemId; renderInspector(true); }
+  else if (action === 'open-idea-inspector') { currentInspectorId = null; currentInspectorIdeaId = itemId; renderInspector(true); }
+  else if (action === 'close-inspector') { currentInspectorId = null; currentInspectorIdeaId = null; renderInspector(); }
   else if (action === 'focus-conflict') { focusedConflictId = itemId; closeModal(); render(); }
   else if (action === 'clear-conflict-focus') { focusedConflictId = null; renderBoard(); }
   else if (action === 'choose-theme') openThemePicker();
@@ -2044,8 +2063,9 @@ document.addEventListener('click', (event) => {
     handleAction(actionTarget);
     return;
   }
-  if (currentInspectorId && !event.target.closest('#inspector') && !event.target.closest('.impl-row') && !event.target.closest('#modal')) {
+  if ((currentInspectorId || currentInspectorIdeaId) && !event.target.closest('#inspector') && !event.target.closest('.impl-row') && !event.target.closest('.idea-card') && !event.target.closest('#modal')) {
     currentInspectorId = null;
+    currentInspectorIdeaId = null;
     renderInspector();
   }
 });
@@ -2068,8 +2088,17 @@ document.addEventListener('keydown', (event) => {
   }
   if (event.ctrlKey && event.key === 'Enter') {
     const inspectorForm = $('#inspector-form');
+    const ideaInspectorForm = $('#idea-inspector-form');
     const modalForm = modal.querySelector('form');
-    if (inspectorForm && inspectorForm.contains(event.target)) {
+    if (ideaInspectorForm && ideaInspectorForm.contains(event.target)) {
+      event.preventDefault();
+      const idea = byId(state.ideas, currentInspectorIdeaId);
+      if (!idea) return;
+      const formData = new FormData(ideaInspectorForm);
+      idea.title = String(formData.get('title') || '').trim() || idea.title;
+      idea.detailsMarkdown = getRichValue($('#inspector'));
+      render(); markDirty();
+    } else if (inspectorForm && inspectorForm.contains(event.target)) {
       event.preventDefault();
       const implementation = byId(state.implementations, currentInspectorId);
       if (!implementation) return;
@@ -2105,8 +2134,17 @@ $('#board-controls').addEventListener('change', (event) => {
   if (event.target.id === 'idea-sort') { view().ideaSort = event.target.value; renderBoard(); markDirty(); }
 });
 $('#inspector').addEventListener('submit', (event) => {
-  if (event.target.id !== 'inspector-form') return;
+  if (!['inspector-form', 'idea-inspector-form'].includes(event.target.id)) return;
   event.preventDefault();
+  if (event.target.id === 'idea-inspector-form') {
+    const idea = byId(state.ideas, currentInspectorIdeaId);
+    if (!idea) return;
+    const formData = new FormData(event.target);
+    idea.title = String(formData.get('title') || '').trim() || idea.title;
+    idea.detailsMarkdown = getRichValue($('#inspector'));
+    render(); markDirty();
+    return;
+  }
   const implementation = byId(state.implementations, currentInspectorId);
   const formData = new FormData(event.target);
   implementation.title = String(formData.get('title') || '').trim() || implementation.title;

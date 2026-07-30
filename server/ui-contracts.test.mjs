@@ -61,8 +61,10 @@ test('shared controls preserve the private search wiring and use a distinct shar
   assert.match(shared, /event\.target\.id === 'shared-search'/);
 });
 
-test('idea titles are direct, accessible detail toggles', () => {
-  assert.match(app, /class="idea-title-button" data-action="toggle-idea-details"/);
-  assert.match(app, /aria-expanded="\$\{expanded\}"/);
+test('idea titles open the idea details inspector while chevrons control inline descriptions', () => {
+  assert.match(app, /class="idea-title-button" data-action="open-idea-inspector"/);
+  assert.match(app, /data-action="toggle-idea-details" data-id="\$\{idea\.id\}" title="Toggle details"/);
+  assert.match(app, /<h2>Idea details<\/h2>/);
+  assert.match(app, /id="idea-inspector-form"/);
   assert.match(styles, /\.idea-title-button \{ display: block; width: 100%/);
 });
