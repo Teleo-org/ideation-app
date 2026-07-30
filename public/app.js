@@ -615,7 +615,7 @@ function renderBoard() {
       const expanded = v.expandedIdeaIds.includes(idea.id);
       return `<section class="idea-card" data-idea-id="${idea.id}" style="${ideaCardStyle(idea)}">
         <header class="idea-header">
-          <h2 class="idea-title">${escapeHtml(idea.title)}</h2>
+          <h2 class="idea-title"><button class="idea-title-button" data-action="toggle-idea-details" data-id="${idea.id}" aria-expanded="${expanded}" title="${expanded ? 'Hide' : 'Show'} idea details">${escapeHtml(idea.title)}</button></h2>
           <div class="idea-control-row">
             <div class="idea-group-dots" aria-label="Idea groups">${groups.map((group) => `<span class="color-dot" title="${escapeHtml(group.name || 'Untitled group')}" style="background:${group.color || '#d5dbe5'}"></span>`).join('')}</div>
             <div class="idea-actions">

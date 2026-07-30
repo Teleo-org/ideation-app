@@ -282,6 +282,8 @@ a { color: var(--primary-dark); }
 .idea-card { display: block; width: 100%; margin: 0; border: 1px solid var(--card-border); border-radius: 16px; overflow: hidden; box-shadow: 0 6px 18px var(--card-shadow); color: var(--idea-fg); background: var(--idea-bg); touch-action: pan-y; user-select: none; }
 .idea-header { padding: 12px 14px; display: grid; gap: 8px; }
 .idea-title { margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--idea-title-size, 18px); line-height: 1.25; text-shadow: 0 1px 1px rgba(255,255,255,.15), 0 1px 3px rgba(0,0,0,.15); }
+.idea-title-button { display: block; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: inherit; text-align: left; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.idea-title-button:focus-visible { outline: 3px solid var(--focus-ring-2); outline-offset: 3px; border-radius: 4px; }
 .idea-control-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .idea-group-dots { display: flex; align-items: center; gap: 5px; min-height: 20px; }
 .idea-group-dots .color-dot { margin: 0; }
