@@ -41,6 +41,10 @@ export function initializePostHog(config) {
     capture_pageleave: false,
     disable_session_recording: true,
     disable_surveys: true,
+    capture_exceptions: false,
+    capture_performance: false,
+    advanced_disable_flags: true,
+    disable_external_dependency_loading: true,
     opt_out_capturing_by_default: true,
     before_send(event) {
       if (event.event === '$identify') return event;

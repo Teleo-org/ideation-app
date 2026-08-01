@@ -353,6 +353,7 @@ export default { async fetch(request, env) {
   }
   if (request.method === 'OPTIONS') return new Response(null, { status: 204 });
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/attachments/')) return securityHeaders(await api(request, env, url));
+  if (url.pathname === '/favicon.ico') return securityHeaders(await env.ASSETS.fetch(new Request(new URL('/favicon.svg', url).toString(), request)));
   const shared = await publicSharePage(request, env, url);
   if (shared) return securityHeaders(shared);
   return securityHeaders(await env.ASSETS.fetch(request));

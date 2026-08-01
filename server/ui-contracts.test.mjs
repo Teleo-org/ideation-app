@@ -8,6 +8,7 @@ const shared = readFileSync(new URL('../public/share.js', import.meta.url), 'utf
 const controls = readFileSync(new URL('../public/board-controls.mjs', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
 const posthog = readFileSync(new URL('../public/posthog.mjs', import.meta.url), 'utf8');
+const worker = readFileSync(new URL('../src/worker.mjs', import.meta.url), 'utf8');
 
 test('main board exposes shared sort controls and a dedicated display settings gear', () => {
   const sortIndex = controls.indexOf('idea-sort');
@@ -60,7 +61,11 @@ test('analytics is opt-in, self-hosted-safe, and explicit-only', () => {
   assert.match(posthog, /capture_pageview: false/);
   assert.match(posthog, /capture_pageleave: false/);
   assert.match(posthog, /disable_session_recording: true/);
+  assert.match(posthog, /capture_exceptions: false/);
+  assert.match(posthog, /advanced_disable_flags: true/);
+  assert.match(posthog, /disable_external_dependency_loading: true/);
   assert.doesNotMatch(posthog, /email/);
+  assert.doesNotMatch(app, /Privacy-preserving analytics enabled/);
   assert.match(app, /recordPersistedEvent\('idea_created'/);
   assert.match(app, /decision_lock_update_attempted/);
 });
@@ -68,6 +73,11 @@ test('analytics is opt-in, self-hosted-safe, and explicit-only', () => {
 test('implementation selection does not render a decision preview banner', () => {
   assert.doesNotMatch(app, /Decision preview:/);
   assert.doesNotMatch(app, /data-action="clear-selection"/);
+});
+
+test('browser icon is declared and the legacy favicon URL resolves to it', () => {
+  assert.match(index, /rel="icon" href="\/favicon\.svg"/);
+  assert.match(worker, /url\.pathname === '\/favicon\.ico'/);
 });
 
 test('private client shell contains every startup control host used by app bootstrap', () => {

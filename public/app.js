@@ -255,14 +255,12 @@ async function setAnalyticsConsent(enabled) {
     analyticsClient?.reset();
     analyticsClient = null;
     renderAnalyticsConsentPrompt();
-    showToast('Analytics disabled for this browser.');
     return;
   }
   if (selfHosted) return showToast('Analytics is unavailable on self-hosted deployments.');
   localStorage.setItem(ANALYTICS_CONSENT_KEY, 'enabled');
-  const client = await ensureAnalytics();
+  await ensureAnalytics();
   renderAnalyticsConsentPrompt();
-  showToast(client ? 'Privacy-preserving analytics enabled for this browser.' : 'Analytics is not configured on this deployment.');
 }
 
 function defaultView() {
