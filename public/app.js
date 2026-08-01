@@ -19,6 +19,9 @@ import { createDraftJournal } from './draft-journal.mjs';
 import { storeGuestAttachment, hydrateGuestAttachments, deleteGuestAttachment } from './guest-attachments.mjs';
 import { markdownToSafeHtml, detailsText } from './markdown.mjs';
 import { boardControlsHtml } from './board-controls.mjs';
+import { posthogReady } from './posthog.mjs';
+
+posthogReady.catch((error) => console.error(error));
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -202,6 +205,15 @@ function showToast(message) {
 }
 
 function setStatus(message) { $('#save-status').textContent = message; }
+
+async function captureEvent(event, properties = {}) {
+  try {
+    const posthog = await posthogReady;
+    posthog?.capture(event, properties);
+  } catch (error) {
+    console.error(error);
+  }
+}
 
 function defaultView() {
   return {
@@ -1012,6 +1024,7 @@ function openNewProjectForm() {
     const name = String(new FormData(form).get('name') || '').trim();
     if (!name) throw new Error('Project name is required.');
     const result = await api('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    void captureEvent('project_created', { storage_mode: 'cloud' });
     closeModal();
     openWorkbench({ state: result.state, path: 'Private cloud workspace', projectId: result.project.id, revision: result.project.revision });
     showToast('Project created.');
@@ -1065,6 +1078,7 @@ async function createProjectShare(mode, expiryDays = 0) {
     await saveState();
     const expiresAt = expiryDays ? new Date(Date.now() + Number(expiryDays) * 86400000).toISOString() : null;
     const share = await api(`/api/projects/${encodeURIComponent(currentProjectId)}/shares`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, expiresAt, view: { ...captureRichView(), themeId: state.activeThemeId } }) });
+    void captureEvent('project_shared', { share_mode: mode, has_expiry: Boolean(expiresAt) });
     modalManager('Share link created', `<p>This ${share.expiresAt ? `expiring (${new Date(share.expiresAt).toLocaleDateString()})` : 'non-expiring'} ${share.mode === 'live' ? 'live' : 'snapshot'} link is read-only and marked not to be indexed.</p><label class="field"><span>Share link</span><input id="share-link" value="${escapeHtml(share.url)}" readonly /></label><div class="form-actions"><button class="button ghost" data-action="project-menu">Done</button><button class="button primary" data-action="copy-share-link">Copy link</button></div>`);
   } catch (error) { showToast(`Could not create the share link: ${error.message}`); }
 }
@@ -1077,11 +1091,29 @@ async function copyShareLink() {
   catch { input.focus(); showToast('Share link selected—copy it from the field.'); }
 }
 
-function signOutAndReturnToBrowser({ removeBrowserCopy = false } = {}) {
+async function signOutAndReturnToBrowser({ removeBrowserCopy = false } = {}) {
   if (!clerk) return;
   if (state && !removeBrowserCopy) saveGuestState(state);
   if (removeBrowserCopy) localStorage.removeItem(GUEST_STORAGE_KEY);
+  try {
+    const posthog = await posthogReady;
+    posthog?.reset();
+  } catch (error) {
+    console.error(error);
+  }
   clerk.signOut(() => location.reload());
+}
+
+async function identifySignedInUser() {
+  const userId = clerk?.user?.id;
+  if (!userId) return;
+  try {
+    const posthog = await posthogReady;
+    const email = clerk.user.primaryEmailAddress?.emailAddress;
+    posthog?.identify(userId, email ? { email } : undefined);
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 function startProjectRename() {
@@ -1123,6 +1155,7 @@ async function initializeClerk() {
     clerk.load({ afterSignInUrl: window.location.href, afterSignUpUrl: window.location.href }),
     new Promise((_, reject) => setTimeout(() => reject(new Error('Clerk took too long to initialize. Please try again.')), 15000)),
   ]);
+  await identifySignedInUser();
   clerkStatus = 'ready';
   renderAccountControl();
   })();
@@ -1215,7 +1248,11 @@ function openIdeaForm(ideaId = null) {
     const payload = {
       id: idea?.id || id(), title, detailsMarkdown: getRichValue(), groupIds: formData.getAll('groupIds').map(String), sortOrder: idea?.sortOrder ?? state.ideas.length,
     };
-    if (idea) Object.assign(idea, payload); else state.ideas.push(payload);
+    if (idea) Object.assign(idea, payload);
+    else {
+      state.ideas.push(payload);
+      void captureEvent('idea_created', { group_count: payload.groupIds.length });
+    }
     closeModal(); render(); markDirty();
   });
 }
@@ -1243,7 +1280,11 @@ function openImplementationForm(implementationId = null, preselectedIdeaId = nul
       groupIds: formData.getAll('groupIds').map(String), sortOrder: implementation?.sortOrder ?? state.implementations.length,
       attachments: implementation?.attachments || [],
     };
-    if (implementation) Object.assign(implementation, payload); else state.implementations.push(payload);
+    if (implementation) Object.assign(implementation, payload);
+    else {
+      state.implementations.push(payload);
+      void captureEvent('implementation_created', { idea_count: ideaIds.length, theme_count: themeIds.length, group_count: payload.groupIds.length });
+    }
     currentInspectorId = payload.id;
     closeModal(); render(); markDirty();
   });
@@ -1273,7 +1314,11 @@ function openConflictForm(conflictId = null, overridesConflictId = null, presele
       id: conflict?.id || id(), name, detailsMarkdown: getRichValue(), themeId: rawThemeId === 'global' ? null : rawThemeId,
       implementationIds, overridesConflictId: conflict?.overridesConflictId || overridesConflictId || null,
     };
-    if (conflict) Object.assign(conflict, payload); else state.conflicts.push(payload);
+    if (conflict) Object.assign(conflict, payload);
+    else {
+      state.conflicts.push(payload);
+      void captureEvent('conflict_created', { member_count: implementationIds.length, scope: payload.themeId ? 'theme' : 'global', is_override: Boolean(payload.overridesConflictId) });
+    }
     closeModal(); render(); markDirty();
     if (returnToRelationshipsId) openImplementationRelationships(returnToRelationshipsId);
   });
@@ -1393,7 +1438,11 @@ function openRequirementForm(requirementId = null, preselectedFromImplementation
     if (fromImplementationId === toImplementationId) throw new Error('Choose two different implementations.');
     if (requirements().some((item) => item.id !== requirement?.id && item.fromImplementationId === fromImplementationId && item.toImplementationId === toImplementationId)) throw new Error('That directional requirement already exists.');
     const payload = { id: requirement?.id || id(), fromImplementationId, toImplementationId };
-    if (requirement) Object.assign(requirement, payload); else requirements().push(payload);
+    if (requirement) Object.assign(requirement, payload);
+    else {
+      requirements().push(payload);
+      void captureEvent('requirements_created', { requirement_count: 1, source: 'form' });
+    }
     closeModal(); render(); markDirty();
     if (returnToRelationshipsId) openImplementationRelationships(returnToRelationshipsId); else openRequirementsManager();
   });
@@ -1475,6 +1524,7 @@ function openSelectedConflictDetails(ids, returnTo = renderConflictBuilder) {
   modalForm('Conflict details', `<div class="form-grid"><label class="field full"><span>Name <small>(optional)</small></span><input name="name" value="${escapeHtml(titles.join(' + '))}" /></label><label class="field full"><span>Explanation <small>(optional)</small></span>${richEditor('', 'Why is this combination invalid?')}</label></div>`, async (form) => {
     const data = new FormData(form); const name = String(data.get('name') || '').trim() || titles.join(' + ');
     state.conflicts.push({ id: id(), name, detailsMarkdown: getRichValue(), themeId: state.activeThemeId, implementationIds: ids, overridesConflictId: null });
+    void captureEvent('conflict_created', { member_count: ids.length, scope: 'theme', is_override: false });
     relationshipDraft.conflictMembers = relationshipDraft.conflictMembers.filter((itemId) => !ids.includes(itemId));
     modalCloseReturn = null; closeModal(); render(); markDirty();
     if (returnTo) returnTo();
@@ -1486,6 +1536,7 @@ function markSelectedConflict(mode) {
   const selected = relationshipDraft.conflictMembers;
   if (mode === 'any') {
     for (const pair of allPairs(selected)) state.conflicts.push({ id: id(), name: pair.map((itemId) => byId(state.implementations, itemId)?.title || 'Implementation').join(' ↔ '), detailsMarkdown: '', themeId: state.activeThemeId, implementationIds: pair, overridesConflictId: null });
+    void captureEvent('conflict_created', { member_count: selected.length, scope: 'theme', is_override: false, conflict_mode: 'any_pair' });
     relationshipDraft.conflictMembers = [];
     closeModal(); render(); markDirty(); renderConflictBuilder();
     return;
@@ -1520,7 +1571,13 @@ function saveRequirementBuilder(details = {}) {
   const edges = requirementEdges(validRequirementChains(chains));
   if (!edges.length) { showToast('Add at least one implementation on both sides of a requirement.'); return; }
   const existing = new Set(requirements().map((item) => `${item.fromImplementationId}:${item.toImplementationId}`));
-  for (const edge of edges) if (!existing.has(`${edge.fromImplementationId}:${edge.toImplementationId}`)) requirements().push({ id: id(), ...edge, ...details });
+  let createdCount = 0;
+  for (const edge of edges) {
+    if (existing.has(`${edge.fromImplementationId}:${edge.toImplementationId}`)) continue;
+    requirements().push({ id: id(), ...edge, ...details });
+    createdCount += 1;
+  }
+  if (createdCount) void captureEvent('requirements_created', { requirement_count: createdCount, source: 'builder' });
   const preselected = [...requirementBuilder.preselected];
   requirementBuilder = { preselected, picked: [], showAll: false, query: '', sides: [[], []] };
   modalCloseReturn = null; closeModal(); render(); markDirty(); renderRequirementBuilder();
@@ -1540,6 +1597,7 @@ function openSaveViewForm() {
     const kind = String(data.get('kind'));
     if (!name) throw new Error('A name is required.');
     state.savedViews.push({ id: id(), name, kind, themeId: state.activeThemeId, lockedImplementationIds: [...view().lockedImplementationIds], richView: kind === 'rich' ? captureRichView() : null, createdAt: new Date().toISOString() });
+    void captureEvent('saved_view_created', { view_kind: kind, locked_implementation_count: view().lockedImplementationIds.length });
     closeModal(); markDirty(); openSavesManager();
   });
 }
@@ -1657,6 +1715,7 @@ async function uploadAttachment(input) {
     const implementation = byId(state.implementations, implementationId);
     implementation.attachments ||= [];
     implementation.attachments.push(attachment);
+    void captureEvent('attachment_uploaded', { storage_mode: storageMode, mime_type: file.type || 'application/octet-stream', size_bucket: file.size < 1024 * 1024 ? 'under_1mb' : file.size < 10 * 1024 * 1024 ? '1mb_to_10mb' : 'over_10mb' });
     render(); markDirty();
   } catch (error) { showToast(error.message); }
 }
@@ -1680,6 +1739,7 @@ async function applyImportedArchive(imported, label) {
       }
     }
     state = candidate;
+    void captureEvent('project_imported', { import_format: label === 'project directory' ? 'directory' : 'archive', attachment_count: archived.length });
     closeModal();
     render();
     markDirty();
@@ -1862,6 +1922,7 @@ function handleAction(target) {
   else if (action === 'lock-selected') {
     const selected = v.selectedImplementationIds;
     const allManual = selected.length && selected.every((id) => v.manuallyLockedImplementationIds.includes(id));
+    let rejectedCount = 0;
     if (allManual) {
       v.manuallyLockedImplementationIds = v.manuallyLockedImplementationIds.filter((id) => !selected.includes(id));
     } else {
@@ -1874,10 +1935,13 @@ function handleAction(target) {
         else manual.push(candidateId);
       }
       v.manuallyLockedImplementationIds = manual;
+      rejectedCount = rejected.length;
       if (rejected.length) showToast(`Could not lock: ${rejected.join(', ')}. Check its conflicts or requirements.`);
     }
     v.selectedImplementationIds = [];
-    syncViewWithTheme(v); render(); markDirty();
+    syncViewWithTheme(v);
+    void captureEvent('decision_lock_updated', { action: allManual ? 'unlock' : 'lock', locked_implementation_count: v.lockedImplementationIds.length, rejected_implementation_count: rejectedCount });
+    render(); markDirty();
   }
   else if (action === 'clear-locks') { v.manuallyLockedImplementationIds = []; v.lockedImplementationIds = []; v.selectedImplementationIds = []; render(); markDirty(); }
   else if (action === 'clear-selection') { v.selectedImplementationIds = []; render(); markDirty(); }
@@ -1944,10 +2008,10 @@ function handleAction(target) {
   else if (action === 'export-project-zip') {
     closeModal();
     setStatus('Preparing complete archiveâ€¦');
-    downloadProjectZip(state).then(() => { setStatus('Saved'); showToast('Portable ZIP exported with attachments.'); }).catch((error) => { setStatus('Export failed'); showToast(error.message); });
+    downloadProjectZip(state).then(() => { void captureEvent('project_exported', { export_format: 'zip' }); setStatus('Saved'); showToast('Portable ZIP exported with attachments.'); }).catch((error) => { setStatus('Export failed'); showToast(error.message); });
   }
   else if (action === 'export-project-directory') {
-    closeModal(); exportProjectDirectory(state).then(() => showToast('Project directory exported.')).catch((error) => showToast(error.message));
+    closeModal(); exportProjectDirectory(state).then(() => { void captureEvent('project_exported', { export_format: 'directory' }); showToast('Project directory exported.'); }).catch((error) => showToast(error.message));
   }
   else if (action === 'import-project-portable') {
     const input = document.createElement('input'); input.type = 'file'; input.accept = '.zip,.json,application/zip,application/json';
@@ -1967,6 +2031,7 @@ function handleAction(target) {
     a.download = `${state.meta.name.replace(/[^a-zA-Z0-9 _-]/g, '_')}.md`;
     a.click();
     URL.revokeObjectURL(url);
+    void captureEvent('project_exported', { export_format: 'markdown' });
     showToast('Project exported as markdown.');
   }
   else if (action === 'project-menu') openProjectMenu();
@@ -2018,6 +2083,7 @@ function handleAction(target) {
         const text = await file.text();
         await checkpointBeforeImport(`Before importing ${file.name}`);
         parseImportMarkdown(text, state);
+        void captureEvent('project_imported', { import_format: 'markdown', attachment_count: 0 });
         closeModal();
         render();
         markDirty();

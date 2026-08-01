@@ -226,7 +226,7 @@ async function uploadProjectAttachment(request, env, workspace, project, url) {
 }
 
 async function api(request, env, url) {
-  if (request.method === 'GET' && url.pathname === '/api/config') return json({ clerkPublishableKey: env.CLERK_PUBLISHABLE_KEY || '', appOrigin: env.APP_ORIGIN });
+  if (request.method === 'GET' && url.pathname === '/api/config') return json({ clerkPublishableKey: env.CLERK_PUBLISHABLE_KEY || '', appOrigin: env.APP_ORIGIN, posthogProjectToken: env.POSTHOG_PROJECT_TOKEN || '', posthogHost: env.POSTHOG_HOST || '' });
   if (request.method === 'POST' && url.pathname === '/api/webhooks/clerk') return handleWebhook(request, env);
   if (request.method === 'GET' && url.pathname === '/api/status') {
     const userId = await authenticate(request, env);
