@@ -46,6 +46,8 @@ jobs:
       CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
       CLERK_WEBHOOK_SIGNING_SECRET: ${{ secrets.CLERK_WEBHOOK_SIGNING_SECRET }}
       APP_ORIGIN: ${{ vars.APP_ORIGIN }}
+      POSTHOG_PROJECT_TOKEN: ${{ vars.POSTHOG_PROJECT_TOKEN }}
+      POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -57,7 +59,7 @@ jobs:
       - name: Apply D1 migrations
         run: npx wrangler d1 migrations apply ideation-workbench --remote
       - name: Deploy Worker
-        run: npx wrangler deploy
+        run: npx wrangler deploy --var POSTHOG_PROJECT_TOKEN:"$POSTHOG_PROJECT_TOKEN" --var POSTHOG_HOST:"$POSTHOG_HOST"
       - name: Smoke test production
         run: |
           curl --fail --retry 5 --retry-delay 2 "$APP_ORIGIN/api/config"
