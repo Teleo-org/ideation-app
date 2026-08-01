@@ -63,7 +63,7 @@ Analytics is off until each browser opts in. Add these bindings directly to the 
 
 | Name | Value | Classification |
 | --- | --- | --- |
-| `POSTHOG_PROJECT_TOKEN` | `phc_...` project token | Worker Secret for configuration hygiene; the browser receives it and it is not an administrative API secret. |
+| `POSTHOG_PROJECT_TOKEN` | `phc_...` project token | Plain Worker text variable; the browser receives it and it is not an administrative API secret. |
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | Plain Worker variable. Use the EU host only for an EU-region PostHog project. |
 
 For `wrangler dev`, add the same values to the ignored `.dev.vars` file. Do not use a PostHog personal API key. In PostHog, disable autocapture, heatmaps, session replay, error tracking, and IP capture unless separately required; the browser client enforces the same automatic-capture restrictions.
