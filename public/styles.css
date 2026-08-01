@@ -415,6 +415,9 @@ a { color: var(--primary-dark); }
 .color-dot { width: 12px; height: 12px; display: inline-block; border-radius: 999px; border: 1px solid var(--dot-border); vertical-align: -1px; margin-right: 6px; }
 .callout { padding: 10px 12px; border: 1px solid var(--primary-tint-border); border-radius: 10px; background: var(--primary-soft-bg); color: var(--primary-soft-fg); font-size: 13px; }
 .toast { position: fixed; right: 18px; bottom: 44px; z-index: 80; max-width: 400px; padding: 11px 14px; border-radius: 11px; background: var(--toast-bg); color: var(--toast-fg); box-shadow: var(--shadow); }
+.analytics-consent { position: fixed; right: 18px; bottom: 44px; z-index: 75; width: min(360px, calc(100vw - 36px)); padding: 14px; border: 1px solid var(--border-strong); border-radius: 13px; background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.analytics-consent p { margin: 7px 0 12px; color: var(--muted); font-size: 13px; line-height: 1.4; }
+.analytics-consent .form-actions { justify-content: flex-end; margin: 0; }
 
 @media (max-width: 1300px) {
   body { min-width: 0; }

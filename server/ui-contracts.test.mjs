@@ -50,7 +50,9 @@ test('Clerk bootstrap has a visible loading state, timeout, retry, and first-par
 
 test('analytics is opt-in, self-hosted-safe, and explicit-only', () => {
   assert.match(app, /ANALYTICS_CONSENT_KEY/);
-  assert.match(app, /data-action="open-analytics-privacy"/);
+  assert.match(index, /id="analytics-consent"/);
+  assert.match(app, /function renderAnalyticsConsentPrompt\(\)/);
+  assert.match(index, /data-action="set-analytics-consent"/);
   assert.match(app, /if \(selfHosted\) return showToast\('Analytics is unavailable/);
   assert.match(app, /import\('\/posthog\.mjs'\)/);
   assert.doesNotMatch(app, /posthogReady/);
@@ -61,6 +63,11 @@ test('analytics is opt-in, self-hosted-safe, and explicit-only', () => {
   assert.doesNotMatch(posthog, /email/);
   assert.match(app, /recordPersistedEvent\('idea_created'/);
   assert.match(app, /decision_lock_update_attempted/);
+});
+
+test('implementation selection does not render a decision preview banner', () => {
+  assert.doesNotMatch(app, /Decision preview:/);
+  assert.doesNotMatch(app, /data-action="clear-selection"/);
 });
 
 test('private client shell contains every startup control host used by app bootstrap', () => {

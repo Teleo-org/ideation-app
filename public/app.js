@@ -210,6 +210,13 @@ function setStatus(message) { $('#save-status').textContent = message; }
 
 function analyticsConsentGranted() { return localStorage.getItem(ANALYTICS_CONSENT_KEY) === 'enabled'; }
 
+function renderAnalyticsConsentPrompt() {
+  const prompt = $('#analytics-consent');
+  if (!prompt) return;
+  const configured = Boolean(runtimeConfig?.posthogProjectToken && runtimeConfig?.posthogHost);
+  prompt.hidden = selfHosted || !configured || localStorage.getItem(ANALYTICS_CONSENT_KEY) !== null;
+}
+
 function attemptEventFor(event) {
   return ({
     idea_created: 'idea_create_attempted', implementation_created: 'implementation_create_attempted', conflict_created: 'conflict_create_attempted', requirements_created: 'requirements_create_attempted', saved_view_created: 'saved_view_create_attempted', decision_lock_updated: 'decision_lock_update_attempted', project_created: 'project_create_attempted', project_shared: 'project_share_attempted', project_exported: 'project_export_attempted', project_imported: 'project_import_attempted', attachment_uploaded: 'attachment_upload_attempted',
@@ -244,15 +251,17 @@ async function ensureAnalytics() {
 
 async function setAnalyticsConsent(enabled) {
   if (!enabled) {
-    localStorage.removeItem(ANALYTICS_CONSENT_KEY);
+    localStorage.setItem(ANALYTICS_CONSENT_KEY, 'disabled');
     analyticsClient?.reset();
     analyticsClient = null;
+    renderAnalyticsConsentPrompt();
     showToast('Analytics disabled for this browser.');
     return;
   }
   if (selfHosted) return showToast('Analytics is unavailable on self-hosted deployments.');
   localStorage.setItem(ANALYTICS_CONSENT_KEY, 'enabled');
   const client = await ensureAnalytics();
+  renderAnalyticsConsentPrompt();
   showToast(client ? 'Privacy-preserving analytics enabled for this browser.' : 'Analytics is not configured on this deployment.');
 }
 
@@ -479,8 +488,7 @@ function openCommandPalette() {
 }
 
 function openMoreMenu() {
-  const analytics = selfHosted ? '' : `<button class="button secondary" data-action="open-analytics-privacy">Analytics & privacy: ${analyticsConsentGranted() ? 'On' : 'Off'}</button>`;
-  modalManager('More', `<div class="form-actions"><button class="button ghost compact" data-action="undo" ${undoStack.length ? '' : 'disabled'}>Undo</button><button class="button ghost compact" data-action="redo" ${redoStack.length ? '' : 'disabled'}>Redo</button></div><div class="manager-list"><button class="button secondary" data-action="open-command-palette">Commands <span class="tiny muted">Ctrl/⌘ K</span></button><button class="button secondary" data-action="open-display-settings">Display and sorting</button><button class="button secondary" data-action="toggle-board-density">Board density: ${boardDensity === 'compact' ? 'Compact' : 'Detailed'}</button>${analytics}<button class="button secondary" data-action="manage-structure">Structure</button><button class="button secondary" data-action="manage-saves">Saved views</button><button class="button secondary" data-action="open-mobile-filters">Filters and visibility</button><button class="button secondary" data-action="open-share-menu">Share</button><button class="button secondary" data-action="open-export-menu">Export</button><button class="button secondary" data-action="open-import-menu">Import</button><button class="button ghost" data-action="project-menu">Project settings</button></div>`);
+  modalManager('More', `<div class="form-actions"><button class="button ghost compact" data-action="undo" ${undoStack.length ? '' : 'disabled'}>Undo</button><button class="button ghost compact" data-action="redo" ${redoStack.length ? '' : 'disabled'}>Redo</button></div><div class="manager-list"><button class="button secondary" data-action="open-command-palette">Commands <span class="tiny muted">Ctrl/⌘ K</span></button><button class="button secondary" data-action="open-display-settings">Display and sorting</button><button class="button secondary" data-action="toggle-board-density">Board density: ${boardDensity === 'compact' ? 'Compact' : 'Detailed'}</button><button class="button secondary" data-action="manage-structure">Structure</button><button class="button secondary" data-action="manage-saves">Saved views</button><button class="button secondary" data-action="open-mobile-filters">Filters and visibility</button><button class="button secondary" data-action="open-share-menu">Share</button><button class="button secondary" data-action="open-export-menu">Export</button><button class="button secondary" data-action="open-import-menu">Import</button><button class="button ghost" data-action="project-menu">Project settings</button></div>`);
   if (state.savedViews.length >= 2) {
     const compare = document.createElement('button');
     compare.className = 'button secondary';
@@ -488,11 +496,6 @@ function openMoreMenu() {
     compare.textContent = 'Compare saved views';
     $('.manager-list', modalBody)?.insertBefore(compare, $('.manager-list [data-action="open-mobile-filters"]', modalBody));
   }
-}
-
-function openAnalyticsPrivacy() {
-  const enabled = analyticsConsentGranted();
-  modalManager('Analytics & privacy', `<p>Optional analytics help improve Ideation Workbench. When enabled, we send limited product-use events such as creating, importing, exporting, and sharing.</p><p class="muted">We never send project names, ideas, implementation titles, notes, attachment names, filenames, or your email. You can change this browser-only setting at any time.</p><div class="form-actions"><button class="button ghost" data-action="open-more-menu">Back</button><button class="button ${enabled ? 'danger' : 'primary'}" data-action="set-analytics-consent" data-enabled="${enabled ? 'false' : 'true'}">${enabled ? 'Disable analytics' : 'Enable analytics'}</button></div>`);
 }
 
 function openDisplaySettings() {
@@ -703,17 +706,6 @@ function renderBoard() {
   if (focused) {
     focusBanner.hidden = false;
     focusBanner.innerHTML = `<strong>${escapeHtml(focused.name)}</strong>${detailsText(focused) ? ` — ${escapeHtml(detailsText(focused).slice(0, 180))}` : ''} <button class="link-button" data-action="clear-conflict-focus">Clear highlight</button>`;
-  } else if (v.selectedImplementationIds.length) {
-    const available = effective.map((item) => item.id);
-    const required = new Set();
-    const conflicts = new Set();
-    for (const selectedId of v.selectedImplementationIds) {
-      const proposal = lockWithRequirements(allConflicts, requirements(), v.lockedImplementationIds, selectedId, available);
-      for (const requirementId of proposal.locked) if (!v.selectedImplementationIds.includes(requirementId) && !v.lockedImplementationIds.includes(requirementId)) required.add(requirementId);
-      for (const conflict of proposal.completedConflicts) conflicts.add(conflict.name);
-    }
-    focusBanner.hidden = false;
-    focusBanner.innerHTML = `<strong>Decision preview:</strong> ${v.selectedImplementationIds.length} selected${required.size ? ` · adds ${required.size} required choice${required.size === 1 ? '' : 's'}` : ''}${conflicts.size ? ` · blocked by ${[...conflicts].slice(0, 3).map(escapeHtml).join(', ')}` : ' · no completed conflicts'} <button class="link-button" data-action="lock-selected">${conflicts.size ? 'Try valid choices' : 'Lock selection'}</button> <button class="link-button" data-action="clear-selection">Clear</button>`;
   } else focusBanner.hidden = true;
 }
 
@@ -1195,6 +1187,7 @@ async function initializeClerk() {
   await ensureAnalytics();
   clerkStatus = 'ready';
   renderAccountControl();
+  renderAnalyticsConsentPrompt();
   })();
   try { return await clerkInitialization; }
   catch (error) { clerkStatus = 'error'; throw error; }
@@ -1899,8 +1892,7 @@ function handleAction(target) {
   else if (action === 'close-modal') dismissModal();
   else if (action === 'create-menu') openCreateMenu();
   else if (action === 'open-more-menu') openMoreMenu();
-  else if (action === 'open-analytics-privacy') openAnalyticsPrivacy();
-  else if (action === 'set-analytics-consent') setAnalyticsConsent(target.dataset.enabled === 'true').then(() => openAnalyticsPrivacy());
+  else if (action === 'set-analytics-consent') setAnalyticsConsent(target.dataset.enabled === 'true');
   else if (action === 'open-command-palette') openCommandPalette();
   else if (action === 'open-display-settings') openDisplaySettings();
   else if (action === 'toggle-idea-sort-direction' || action === 'toggle-sort-direction') { v.ideaSortDirection = v.ideaSortDirection === 'desc' ? 'asc' : 'desc'; renderFilters(); renderBoard(); markDirty(); }
