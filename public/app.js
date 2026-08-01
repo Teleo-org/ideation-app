@@ -19,9 +19,6 @@ import { createDraftJournal } from './draft-journal.mjs';
 import { storeGuestAttachment, hydrateGuestAttachments, deleteGuestAttachment } from './guest-attachments.mjs';
 import { markdownToSafeHtml, detailsText } from './markdown.mjs';
 import { boardControlsHtml } from './board-controls.mjs';
-import { posthogReady } from './posthog.mjs';
-
-posthogReady.catch((error) => console.error(error));
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -64,9 +61,14 @@ let redoStack = [];
 let historyBaseline = '';
 let historyCoalesceTimer = null;
 let selfHosted = false;
+let runtimeConfig = null;
+let analyticsClient = null;
+let analyticsLoading = null;
+let pendingAnalyticsEvents = [];
 let boardDensity = localStorage.getItem('ideation-workbench:board-density') === 'compact' ? 'compact' : 'detailed';
 const GUEST_STORAGE_KEY = 'ideation-workbench:guest-state:v1';
 const GUEST_BACKUP_KEY = 'ideation-workbench:guest-backup-before-cloud:v1';
+const ANALYTICS_CONSENT_KEY = 'ideation-workbench:analytics-consent:v1';
 
 function guestDefaultState(name = 'My Ideation Project') {
   const themeId = id();
@@ -206,13 +208,52 @@ function showToast(message) {
 
 function setStatus(message) { $('#save-status').textContent = message; }
 
-async function captureEvent(event, properties = {}) {
-  try {
-    const posthog = await posthogReady;
-    posthog?.capture(event, properties);
-  } catch (error) {
-    console.error(error);
+function analyticsConsentGranted() { return localStorage.getItem(ANALYTICS_CONSENT_KEY) === 'enabled'; }
+
+function attemptEventFor(event) {
+  return ({
+    idea_created: 'idea_create_attempted', implementation_created: 'implementation_create_attempted', conflict_created: 'conflict_create_attempted', requirements_created: 'requirements_create_attempted', saved_view_created: 'saved_view_create_attempted', decision_lock_updated: 'decision_lock_update_attempted', project_created: 'project_create_attempted', project_shared: 'project_share_attempted', project_exported: 'project_export_attempted', project_imported: 'project_import_attempted', attachment_uploaded: 'attachment_upload_attempted',
+  })[event];
+}
+
+function captureEvent(event, properties = {}) { analyticsClient?.capture(event, properties); }
+
+function recordPersistedEvent(event, properties = {}, captureAttempt = true) {
+  const attempted = attemptEventFor(event);
+  if (captureAttempt && attempted) captureEvent(attempted, properties);
+  pendingAnalyticsEvents.push({ event, properties });
+}
+
+async function identifySignedInUser() { analyticsClient?.identify(clerk?.user?.id); }
+
+async function ensureAnalytics() {
+  if (!analyticsConsentGranted() || selfHosted || analyticsClient) return analyticsClient;
+  if (analyticsLoading) return analyticsLoading;
+  analyticsLoading = (async () => {
+    const config = runtimeConfig || await fetch('/api/config').then((response) => response.ok ? response.json() : null);
+    if (!config || config.selfHosted) return null;
+    const { initializePostHog } = await import('/posthog.mjs');
+    analyticsClient = initializePostHog(config);
+    await identifySignedInUser();
+    return analyticsClient;
+  })();
+  try { return await analyticsLoading; }
+  catch (error) { console.error('Analytics could not be initialized.', error); return null; }
+  finally { analyticsLoading = null; }
+}
+
+async function setAnalyticsConsent(enabled) {
+  if (!enabled) {
+    localStorage.removeItem(ANALYTICS_CONSENT_KEY);
+    analyticsClient?.reset();
+    analyticsClient = null;
+    showToast('Analytics disabled for this browser.');
+    return;
   }
+  if (selfHosted) return showToast('Analytics is unavailable on self-hosted deployments.');
+  localStorage.setItem(ANALYTICS_CONSENT_KEY, 'enabled');
+  const client = await ensureAnalytics();
+  showToast(client ? 'Privacy-preserving analytics enabled for this browser.' : 'Analytics is not configured on this deployment.');
 }
 
 function defaultView() {
@@ -272,7 +313,9 @@ async function saveState() {
   if (!state) return;
   const snapshot = projectDocumentForPersistence(state);
   if (projectContentFingerprint(snapshot) === lastSavedSnapshot) { setStatus('Saved'); return; }
-  await saveCoordinator?.enqueue(snapshot);
+  const analyticsEvents = pendingAnalyticsEvents;
+  pendingAnalyticsEvents = [];
+  await saveCoordinator?.enqueue(snapshot, { analyticsEvents });
 }
 
 function downloadStateCopy(snapshot, suffix = 'local-copy') {
@@ -300,11 +343,12 @@ function configureSaveCoordinator() {
       if (status === 'offline') setStatus('Offline â€” changes queued');
       if (status === 'conflict') setStatus('Save conflict');
     },
-    onSaved(result, snapshot) {
+    onSaved(result, snapshot, metadata) {
       currentRevision = Number(result.revision || currentRevision + 1);
       lastSavedSnapshot = projectContentFingerprint(result.state || snapshot);
       if (projectContentFingerprint(state) === projectContentFingerprint(snapshot) && result.state?.meta?.updatedAt) state.meta.updatedAt = result.state.meta.updatedAt;
       setStatus(`Saved ${new Date(result.state?.meta?.updatedAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+      for (const event of metadata?.analyticsEvents || []) captureEvent(event.event, event.properties);
     },
     onConflict(error, snapshot) {
       pendingSaveConflict = { error, snapshot, server: error.payload?.state || null };
@@ -435,7 +479,8 @@ function openCommandPalette() {
 }
 
 function openMoreMenu() {
-  modalManager('More', `<div class="form-actions"><button class="button ghost compact" data-action="undo" ${undoStack.length ? '' : 'disabled'}>Undo</button><button class="button ghost compact" data-action="redo" ${redoStack.length ? '' : 'disabled'}>Redo</button></div><div class="manager-list"><button class="button secondary" data-action="open-command-palette">Commands <span class="tiny muted">Ctrl/⌘ K</span></button><button class="button secondary" data-action="open-display-settings">Display and sorting</button><button class="button secondary" data-action="toggle-board-density">Board density: ${boardDensity === 'compact' ? 'Compact' : 'Detailed'}</button><button class="button secondary" data-action="manage-structure">Structure</button><button class="button secondary" data-action="manage-saves">Saved views</button><button class="button secondary" data-action="open-mobile-filters">Filters and visibility</button><button class="button secondary" data-action="open-share-menu">Share</button><button class="button secondary" data-action="open-export-menu">Export</button><button class="button secondary" data-action="open-import-menu">Import</button><button class="button ghost" data-action="project-menu">Project settings</button></div>`);
+  const analytics = selfHosted ? '' : `<button class="button secondary" data-action="open-analytics-privacy">Analytics & privacy: ${analyticsConsentGranted() ? 'On' : 'Off'}</button>`;
+  modalManager('More', `<div class="form-actions"><button class="button ghost compact" data-action="undo" ${undoStack.length ? '' : 'disabled'}>Undo</button><button class="button ghost compact" data-action="redo" ${redoStack.length ? '' : 'disabled'}>Redo</button></div><div class="manager-list"><button class="button secondary" data-action="open-command-palette">Commands <span class="tiny muted">Ctrl/⌘ K</span></button><button class="button secondary" data-action="open-display-settings">Display and sorting</button><button class="button secondary" data-action="toggle-board-density">Board density: ${boardDensity === 'compact' ? 'Compact' : 'Detailed'}</button>${analytics}<button class="button secondary" data-action="manage-structure">Structure</button><button class="button secondary" data-action="manage-saves">Saved views</button><button class="button secondary" data-action="open-mobile-filters">Filters and visibility</button><button class="button secondary" data-action="open-share-menu">Share</button><button class="button secondary" data-action="open-export-menu">Export</button><button class="button secondary" data-action="open-import-menu">Import</button><button class="button ghost" data-action="project-menu">Project settings</button></div>`);
   if (state.savedViews.length >= 2) {
     const compare = document.createElement('button');
     compare.className = 'button secondary';
@@ -443,6 +488,11 @@ function openMoreMenu() {
     compare.textContent = 'Compare saved views';
     $('.manager-list', modalBody)?.insertBefore(compare, $('.manager-list [data-action="open-mobile-filters"]', modalBody));
   }
+}
+
+function openAnalyticsPrivacy() {
+  const enabled = analyticsConsentGranted();
+  modalManager('Analytics & privacy', `<p>Optional analytics help improve Ideation Workbench. When enabled, we send limited product-use events such as creating, importing, exporting, and sharing.</p><p class="muted">We never send project names, ideas, implementation titles, notes, attachment names, filenames, or your email. You can change this browser-only setting at any time.</p><div class="form-actions"><button class="button ghost" data-action="open-more-menu">Back</button><button class="button ${enabled ? 'danger' : 'primary'}" data-action="set-analytics-consent" data-enabled="${enabled ? 'false' : 'true'}">${enabled ? 'Disable analytics' : 'Enable analytics'}</button></div>`);
 }
 
 function openDisplaySettings() {
@@ -1023,8 +1073,9 @@ function openNewProjectForm() {
   modalForm('New project', '<label class="field"><span>Project name</span><input name="name" value="My Ideation Project" required autofocus /></label>', async (form) => {
     const name = String(new FormData(form).get('name') || '').trim();
     if (!name) throw new Error('Project name is required.');
+    captureEvent('project_create_attempted', { storage_mode: 'cloud' });
     const result = await api('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
-    void captureEvent('project_created', { storage_mode: 'cloud' });
+    captureEvent('project_created', { storage_mode: 'cloud' });
     closeModal();
     openWorkbench({ state: result.state, path: 'Private cloud workspace', projectId: result.project.id, revision: result.project.revision });
     showToast('Project created.');
@@ -1075,10 +1126,11 @@ function openSignOutMenu(removeBrowserCopy) {
 
 async function createProjectShare(mode, expiryDays = 0) {
   try {
+    captureEvent('project_share_attempted', { share_mode: mode, has_expiry: Boolean(expiryDays) });
     await saveState();
     const expiresAt = expiryDays ? new Date(Date.now() + Number(expiryDays) * 86400000).toISOString() : null;
     const share = await api(`/api/projects/${encodeURIComponent(currentProjectId)}/shares`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, expiresAt, view: { ...captureRichView(), themeId: state.activeThemeId } }) });
-    void captureEvent('project_shared', { share_mode: mode, has_expiry: Boolean(expiresAt) });
+    captureEvent('project_shared', { share_mode: mode, has_expiry: Boolean(expiresAt) });
     modalManager('Share link created', `<p>This ${share.expiresAt ? `expiring (${new Date(share.expiresAt).toLocaleDateString()})` : 'non-expiring'} ${share.mode === 'live' ? 'live' : 'snapshot'} link is read-only and marked not to be indexed.</p><label class="field"><span>Share link</span><input id="share-link" value="${escapeHtml(share.url)}" readonly /></label><div class="form-actions"><button class="button ghost" data-action="project-menu">Done</button><button class="button primary" data-action="copy-share-link">Copy link</button></div>`);
   } catch (error) { showToast(`Could not create the share link: ${error.message}`); }
 }
@@ -1095,25 +1147,9 @@ async function signOutAndReturnToBrowser({ removeBrowserCopy = false } = {}) {
   if (!clerk) return;
   if (state && !removeBrowserCopy) saveGuestState(state);
   if (removeBrowserCopy) localStorage.removeItem(GUEST_STORAGE_KEY);
-  try {
-    const posthog = await posthogReady;
-    posthog?.reset();
-  } catch (error) {
-    console.error(error);
-  }
+  analyticsClient?.reset();
+  analyticsClient = null;
   clerk.signOut(() => location.reload());
-}
-
-async function identifySignedInUser() {
-  const userId = clerk?.user?.id;
-  if (!userId) return;
-  try {
-    const posthog = await posthogReady;
-    const email = clerk.user.primaryEmailAddress?.emailAddress;
-    posthog?.identify(userId, email ? { email } : undefined);
-  } catch (error) {
-    console.error(error);
-  }
 }
 
 function startProjectRename() {
@@ -1144,6 +1180,7 @@ async function initializeClerk() {
   const response = await fetch('/api/config');
   if (!response.ok) throw new Error('Authentication settings could not be loaded.');
   const config = await response.json();
+  runtimeConfig = config;
   if (config.selfHosted) {
     selfHosted = true;
     clerkStatus = 'ready';
@@ -1155,7 +1192,7 @@ async function initializeClerk() {
     clerk.load({ afterSignInUrl: window.location.href, afterSignUpUrl: window.location.href }),
     new Promise((_, reject) => setTimeout(() => reject(new Error('Clerk took too long to initialize. Please try again.')), 15000)),
   ]);
-  await identifySignedInUser();
+  await ensureAnalytics();
   clerkStatus = 'ready';
   renderAccountControl();
   })();
@@ -1251,7 +1288,7 @@ function openIdeaForm(ideaId = null) {
     if (idea) Object.assign(idea, payload);
     else {
       state.ideas.push(payload);
-      void captureEvent('idea_created', { group_count: payload.groupIds.length });
+      recordPersistedEvent('idea_created', { group_count: payload.groupIds.length });
     }
     closeModal(); render(); markDirty();
   });
@@ -1283,7 +1320,7 @@ function openImplementationForm(implementationId = null, preselectedIdeaId = nul
     if (implementation) Object.assign(implementation, payload);
     else {
       state.implementations.push(payload);
-      void captureEvent('implementation_created', { idea_count: ideaIds.length, theme_count: themeIds.length, group_count: payload.groupIds.length });
+      recordPersistedEvent('implementation_created', { idea_count: ideaIds.length, theme_count: themeIds.length, group_count: payload.groupIds.length });
     }
     currentInspectorId = payload.id;
     closeModal(); render(); markDirty();
@@ -1317,7 +1354,7 @@ function openConflictForm(conflictId = null, overridesConflictId = null, presele
     if (conflict) Object.assign(conflict, payload);
     else {
       state.conflicts.push(payload);
-      void captureEvent('conflict_created', { member_count: implementationIds.length, scope: payload.themeId ? 'theme' : 'global', is_override: Boolean(payload.overridesConflictId) });
+      recordPersistedEvent('conflict_created', { member_count: implementationIds.length, scope: payload.themeId ? 'theme' : 'global', is_override: Boolean(payload.overridesConflictId) });
     }
     closeModal(); render(); markDirty();
     if (returnToRelationshipsId) openImplementationRelationships(returnToRelationshipsId);
@@ -1441,7 +1478,7 @@ function openRequirementForm(requirementId = null, preselectedFromImplementation
     if (requirement) Object.assign(requirement, payload);
     else {
       requirements().push(payload);
-      void captureEvent('requirements_created', { requirement_count: 1, source: 'form' });
+      recordPersistedEvent('requirements_created', { requirement_count: 1, source: 'form' });
     }
     closeModal(); render(); markDirty();
     if (returnToRelationshipsId) openImplementationRelationships(returnToRelationshipsId); else openRequirementsManager();
@@ -1524,7 +1561,7 @@ function openSelectedConflictDetails(ids, returnTo = renderConflictBuilder) {
   modalForm('Conflict details', `<div class="form-grid"><label class="field full"><span>Name <small>(optional)</small></span><input name="name" value="${escapeHtml(titles.join(' + '))}" /></label><label class="field full"><span>Explanation <small>(optional)</small></span>${richEditor('', 'Why is this combination invalid?')}</label></div>`, async (form) => {
     const data = new FormData(form); const name = String(data.get('name') || '').trim() || titles.join(' + ');
     state.conflicts.push({ id: id(), name, detailsMarkdown: getRichValue(), themeId: state.activeThemeId, implementationIds: ids, overridesConflictId: null });
-    void captureEvent('conflict_created', { member_count: ids.length, scope: 'theme', is_override: false });
+    recordPersistedEvent('conflict_created', { member_count: ids.length, scope: 'theme', is_override: false });
     relationshipDraft.conflictMembers = relationshipDraft.conflictMembers.filter((itemId) => !ids.includes(itemId));
     modalCloseReturn = null; closeModal(); render(); markDirty();
     if (returnTo) returnTo();
@@ -1536,7 +1573,7 @@ function markSelectedConflict(mode) {
   const selected = relationshipDraft.conflictMembers;
   if (mode === 'any') {
     for (const pair of allPairs(selected)) state.conflicts.push({ id: id(), name: pair.map((itemId) => byId(state.implementations, itemId)?.title || 'Implementation').join(' ↔ '), detailsMarkdown: '', themeId: state.activeThemeId, implementationIds: pair, overridesConflictId: null });
-    void captureEvent('conflict_created', { member_count: selected.length, scope: 'theme', is_override: false, conflict_mode: 'any_pair' });
+    recordPersistedEvent('conflict_created', { member_count: selected.length, scope: 'theme', is_override: false, conflict_mode: 'any_pair' });
     relationshipDraft.conflictMembers = [];
     closeModal(); render(); markDirty(); renderConflictBuilder();
     return;
@@ -1577,7 +1614,7 @@ function saveRequirementBuilder(details = {}) {
     requirements().push({ id: id(), ...edge, ...details });
     createdCount += 1;
   }
-  if (createdCount) void captureEvent('requirements_created', { requirement_count: createdCount, source: 'builder' });
+  if (createdCount) recordPersistedEvent('requirements_created', { requirement_count: createdCount, source: 'builder' });
   const preselected = [...requirementBuilder.preselected];
   requirementBuilder = { preselected, picked: [], showAll: false, query: '', sides: [[], []] };
   modalCloseReturn = null; closeModal(); render(); markDirty(); renderRequirementBuilder();
@@ -1597,7 +1634,7 @@ function openSaveViewForm() {
     const kind = String(data.get('kind'));
     if (!name) throw new Error('A name is required.');
     state.savedViews.push({ id: id(), name, kind, themeId: state.activeThemeId, lockedImplementationIds: [...view().lockedImplementationIds], richView: kind === 'rich' ? captureRichView() : null, createdAt: new Date().toISOString() });
-    void captureEvent('saved_view_created', { view_kind: kind, locked_implementation_count: view().lockedImplementationIds.length });
+    recordPersistedEvent('saved_view_created', { view_kind: kind, locked_implementation_count: view().lockedImplementationIds.length });
     closeModal(); markDirty(); openSavesManager();
   });
 }
@@ -1708,6 +1745,8 @@ async function uploadAttachment(input) {
   const file = input.files?.[0];
   const implementationId = input.dataset.implementationId;
   if (!file || !implementationId) return;
+  const analyticsProperties = { storage_mode: storageMode, mime_type: file.type || 'application/octet-stream', size_bucket: file.size < 1024 * 1024 ? 'under_1mb' : file.size < 10 * 1024 * 1024 ? '1mb_to_10mb' : 'over_10mb' };
+  captureEvent('attachment_upload_attempted', analyticsProperties);
   try {
     setStatus('Uploading attachment…');
     const attachmentPath = storageMode === 'cloud' ? `/api/projects/${encodeURIComponent(currentProjectId)}/attachments` : '/api/attachments';
@@ -1715,7 +1754,7 @@ async function uploadAttachment(input) {
     const implementation = byId(state.implementations, implementationId);
     implementation.attachments ||= [];
     implementation.attachments.push(attachment);
-    void captureEvent('attachment_uploaded', { storage_mode: storageMode, mime_type: file.type || 'application/octet-stream', size_bucket: file.size < 1024 * 1024 ? 'under_1mb' : file.size < 10 * 1024 * 1024 ? '1mb_to_10mb' : 'over_10mb' });
+    recordPersistedEvent('attachment_uploaded', analyticsProperties, false);
     render(); markDirty();
   } catch (error) { showToast(error.message); }
 }
@@ -1724,6 +1763,8 @@ async function applyImportedArchive(imported, label) {
   const candidate = validateProjectDocument(imported);
   await checkpointBeforeImport(`Before importing ${label}`);
   const archived = importedAttachments(imported);
+  const analyticsProperties = { import_format: label === 'project directory' ? 'directory' : 'archive', attachment_count: archived.length };
+  captureEvent('project_import_attempted', analyticsProperties);
   const uploaded = [];
   try {
     for (const entry of archived) {
@@ -1739,7 +1780,7 @@ async function applyImportedArchive(imported, label) {
       }
     }
     state = candidate;
-    void captureEvent('project_imported', { import_format: label === 'project directory' ? 'directory' : 'archive', attachment_count: archived.length });
+    recordPersistedEvent('project_imported', analyticsProperties, false);
     closeModal();
     render();
     markDirty();
@@ -1858,6 +1899,8 @@ function handleAction(target) {
   else if (action === 'close-modal') dismissModal();
   else if (action === 'create-menu') openCreateMenu();
   else if (action === 'open-more-menu') openMoreMenu();
+  else if (action === 'open-analytics-privacy') openAnalyticsPrivacy();
+  else if (action === 'set-analytics-consent') setAnalyticsConsent(target.dataset.enabled === 'true').then(() => openAnalyticsPrivacy());
   else if (action === 'open-command-palette') openCommandPalette();
   else if (action === 'open-display-settings') openDisplaySettings();
   else if (action === 'toggle-idea-sort-direction' || action === 'toggle-sort-direction') { v.ideaSortDirection = v.ideaSortDirection === 'desc' ? 'asc' : 'desc'; renderFilters(); renderBoard(); markDirty(); }
@@ -1940,10 +1983,15 @@ function handleAction(target) {
     }
     v.selectedImplementationIds = [];
     syncViewWithTheme(v);
-    void captureEvent('decision_lock_updated', { action: allManual ? 'unlock' : 'lock', locked_implementation_count: v.lockedImplementationIds.length, rejected_implementation_count: rejectedCount });
+    recordPersistedEvent('decision_lock_updated', { action: allManual ? 'unlock' : 'lock', locked_implementation_count: v.lockedImplementationIds.length, rejected_implementation_count: rejectedCount });
     render(); markDirty();
   }
-  else if (action === 'clear-locks') { v.manuallyLockedImplementationIds = []; v.lockedImplementationIds = []; v.selectedImplementationIds = []; render(); markDirty(); }
+  else if (action === 'clear-locks') {
+    const hadLocks = v.lockedImplementationIds.length > 0;
+    if (hadLocks) recordPersistedEvent('decision_lock_updated', { action: 'clear', locked_implementation_count: 0, rejected_implementation_count: 0 });
+    else captureEvent('decision_lock_update_attempted', { action: 'clear', locked_implementation_count: 0, rejected_implementation_count: 0 });
+    v.manuallyLockedImplementationIds = []; v.lockedImplementationIds = []; v.selectedImplementationIds = []; render(); markDirty();
+  }
   else if (action === 'clear-selection') { v.selectedImplementationIds = []; render(); markDirty(); }
   else if (action === 'open-inspector') { currentInspectorIdeaId = null; currentInspectorId = itemId; renderInspector(true); }
   else if (action === 'open-idea-inspector') { currentInspectorId = null; currentInspectorIdeaId = itemId; renderInspector(true); }
@@ -2008,10 +2056,11 @@ function handleAction(target) {
   else if (action === 'export-project-zip') {
     closeModal();
     setStatus('Preparing complete archiveâ€¦');
-    downloadProjectZip(state).then(() => { void captureEvent('project_exported', { export_format: 'zip' }); setStatus('Saved'); showToast('Portable ZIP exported with attachments.'); }).catch((error) => { setStatus('Export failed'); showToast(error.message); });
+    captureEvent('project_export_attempted', { export_format: 'zip' });
+    downloadProjectZip(state).then(() => { captureEvent('project_exported', { export_format: 'zip' }); setStatus('Saved'); showToast('Portable ZIP exported with attachments.'); }).catch((error) => { setStatus('Export failed'); showToast(error.message); });
   }
   else if (action === 'export-project-directory') {
-    closeModal(); exportProjectDirectory(state).then(() => { void captureEvent('project_exported', { export_format: 'directory' }); showToast('Project directory exported.'); }).catch((error) => showToast(error.message));
+    closeModal(); captureEvent('project_export_attempted', { export_format: 'directory' }); exportProjectDirectory(state).then(() => { captureEvent('project_exported', { export_format: 'directory' }); showToast('Project directory exported.'); }).catch((error) => showToast(error.message));
   }
   else if (action === 'import-project-portable') {
     const input = document.createElement('input'); input.type = 'file'; input.accept = '.zip,.json,application/zip,application/json';
@@ -2023,6 +2072,7 @@ function handleAction(target) {
   }
   else if (action === 'export-project') {
     closeModal();
+    captureEvent('project_export_attempted', { export_format: 'markdown' });
     const md = generateExportMarkdown(state);
     const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
@@ -2031,7 +2081,7 @@ function handleAction(target) {
     a.download = `${state.meta.name.replace(/[^a-zA-Z0-9 _-]/g, '_')}.md`;
     a.click();
     URL.revokeObjectURL(url);
-    void captureEvent('project_exported', { export_format: 'markdown' });
+    captureEvent('project_exported', { export_format: 'markdown' });
     showToast('Project exported as markdown.');
   }
   else if (action === 'project-menu') openProjectMenu();
@@ -2080,10 +2130,11 @@ function handleAction(target) {
       const file = input.files?.[0];
       if (!file) return;
       try {
+        captureEvent('project_import_attempted', { import_format: 'markdown', attachment_count: 0 });
         const text = await file.text();
         await checkpointBeforeImport(`Before importing ${file.name}`);
         parseImportMarkdown(text, state);
-        void captureEvent('project_imported', { import_format: 'markdown', attachment_count: 0 });
+        recordPersistedEvent('project_imported', { import_format: 'markdown', attachment_count: 0 }, false);
         closeModal();
         render();
         markDirty();

@@ -57,6 +57,17 @@ Set these as production Worker configuration during deployment:
 
 The workflow will be added with the Worker implementation. It will validate pull requests and deploy successful `main` pushes directly to production.
 
+## Optional PostHog analytics
+
+Analytics is off until each browser opts in. Add these bindings directly to the production Worker in **Settings → Variables and Secrets**; they persist across the existing deploy workflow:
+
+| Name | Value | Classification |
+| --- | --- | --- |
+| `POSTHOG_PROJECT_TOKEN` | `phc_...` project token | Worker Secret for configuration hygiene; the browser receives it and it is not an administrative API secret. |
+| `POSTHOG_HOST` | `https://us.i.posthog.com` | Plain Worker variable. Use the EU host only for an EU-region PostHog project. |
+
+For `wrangler dev`, add the same values to the ignored `.dev.vars` file. Do not use a PostHog personal API key. In PostHog, disable autocapture, heatmaps, session replay, error tracking, and IP capture unless separately required; the browser client enforces the same automatic-capture restrictions.
+
 ## 5. Values to provide before deployment
 
 - Cloudflare account ID and scoped API token.
