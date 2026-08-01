@@ -64,6 +64,7 @@ test('analytics is opt-in, self-hosted-safe, and explicit-only', () => {
   assert.match(posthog, /capture_exceptions: false/);
   assert.match(posthog, /advanced_disable_flags: true/);
   assert.match(posthog, /disable_external_dependency_loading: true/);
+  assert.match(posthog, /api_host: `\$\{window\.location\.origin\}\/analytics`/);
   assert.doesNotMatch(posthog, /email/);
   assert.doesNotMatch(app, /Privacy-preserving analytics enabled/);
   assert.match(app, /recordPersistedEvent\('idea_created'/);
@@ -78,6 +79,13 @@ test('implementation selection does not render a decision preview banner', () =>
 test('browser icon is declared and the legacy favicon URL resolves to it', () => {
   assert.match(index, /rel="icon" href="\/favicon\.svg"/);
   assert.match(worker, /url\.pathname === '\/favicon\.ico'/);
+});
+
+test('analytics proxy forwards only bounded PostHog event batches', () => {
+  assert.match(worker, /url\.pathname !== '\/analytics\/e\/'/);
+  assert.match(worker, /POSTHOG_INGEST_HOSTS/);
+  assert.match(worker, /ANALYTICS_MAX_BODY_BYTES/);
+  assert.match(worker, /new URL\('\/e\/', env\.POSTHOG_HOST\)/);
 });
 
 test('private client shell contains every startup control host used by app bootstrap', () => {

@@ -3,6 +3,8 @@ import { Webhook } from 'svix';
 import { validateProjectDocument, ProjectValidationError } from './shared/project-document.mjs';
 
 const SLOT_LIMIT = 20;
+const ANALYTICS_MAX_BODY_BYTES = 64 * 1024;
+const POSTHOG_INGEST_HOSTS = new Set(['us.i.posthog.com', 'eu.i.posthog.com']);
 const json = (payload, status = 200) => new Response(JSON.stringify(payload), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 const error = (message, status = 400) => json({ error: message }, status);
 const now = () => new Date().toISOString();
@@ -24,6 +26,29 @@ function securityHeaders(response) {
   headers.set('permissions-policy', 'camera=(), microphone=(), geolocation=()');
   headers.set('strict-transport-security', 'max-age=31536000; includeSubDomains');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+async function proxyAnalyticsEvent(request, env, url) {
+  if (request.method !== 'POST' || url.pathname !== '/analytics/e/') return error('Not found.', 404);
+  let upstreamUrl;
+  try {
+    upstreamUrl = new URL('/e/', env.POSTHOG_HOST);
+    upstreamUrl.search = url.search;
+  } catch { return error('Analytics is unavailable.', 503); }
+  if (upstreamUrl.protocol !== 'https:' || !POSTHOG_INGEST_HOSTS.has(upstreamUrl.hostname)) return error('Analytics is unavailable.', 503);
+
+  const declaredLength = Number(request.headers.get('content-length') || 0);
+  if (!Number.isFinite(declaredLength) || declaredLength > ANALYTICS_MAX_BODY_BYTES) return error('Analytics event is too large.', 413);
+  const body = await request.arrayBuffer();
+  if (body.byteLength > ANALYTICS_MAX_BODY_BYTES) return error('Analytics event is too large.', 413);
+
+  const headers = new Headers({ accept: 'application/json' });
+  const contentType = request.headers.get('content-type');
+  if (contentType) headers.set('content-type', contentType);
+  try {
+    const upstream = await fetch(upstreamUrl, { method: 'POST', headers, body });
+    return new Response(null, { status: upstream.status, headers: { 'cache-control': 'no-store' } });
+  } catch { return error('Analytics is temporarily unavailable.', 502); }
 }
 
 async function authenticate(request, env) {
@@ -353,6 +378,7 @@ export default { async fetch(request, env) {
   }
   if (request.method === 'OPTIONS') return new Response(null, { status: 204 });
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/attachments/')) return securityHeaders(await api(request, env, url));
+  if (url.pathname.startsWith('/analytics/')) return securityHeaders(await proxyAnalyticsEvent(request, env, url));
   if (url.pathname === '/favicon.ico') return securityHeaders(await env.ASSETS.fetch(new Request(new URL('/favicon.svg', url).toString(), request)));
   const shared = await publicSharePage(request, env, url);
   if (shared) return securityHeaders(shared);

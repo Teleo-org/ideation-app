@@ -35,7 +35,7 @@ function safeProperties(event, properties = {}) {
 export function initializePostHog(config) {
   if (config?.selfHosted || !config?.posthogProjectToken || !config?.posthogHost) return null;
   posthog.init(config.posthogProjectToken, {
-    api_host: config.posthogHost,
+    api_host: `${window.location.origin}/analytics`,
     autocapture: false,
     capture_pageview: false,
     capture_pageleave: false,
