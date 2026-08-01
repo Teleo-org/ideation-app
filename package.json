@@ -24,6 +24,7 @@
     "@clerk/backend": "^3.13.2",
     "@clerk/clerk-js": "^6.25.10",
     "fflate": "^0.8.3",
+    "posthog-js": "^1.409.5",
     "svix": "^1.99.1"
   },
   "devDependencies": {

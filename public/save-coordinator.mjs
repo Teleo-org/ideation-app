@@ -10,9 +10,11 @@ export class SaveCoordinator {
     this.retryTimer = null;
   }
 
-  async enqueue(snapshot) {
-    this.pending = structuredClone(snapshot);
-    await this.journal?.write(this.pending);
+  async enqueue(snapshot, metadata = {}) {
+    const next = { snapshot: structuredClone(snapshot), metadata };
+    if (this.pending) next.metadata.analyticsEvents = [...(this.pending.metadata?.analyticsEvents || []), ...(metadata.analyticsEvents || [])];
+    this.pending = next;
+    await this.journal?.write(this.pending.snapshot);
     this.onStatus('queued');
     return this.drain();
   }
@@ -22,18 +24,20 @@ export class SaveCoordinator {
     this.running = true;
     try {
       while (this.pending) {
-        const snapshot = this.pending;
+        const pending = this.pending;
+        const { snapshot, metadata } = pending;
         this.pending = null;
         this.onStatus('saving');
         try {
           const result = await this.save(snapshot);
-          this.onSaved(result, snapshot);
+          this.onSaved(result, snapshot, metadata);
           if (!this.pending) {
             await this.journal?.clear();
             this.onStatus('saved');
           }
         } catch (error) {
-          if (!this.pending) this.pending = snapshot;
+          if (!this.pending) this.pending = pending;
+          else this.pending.metadata.analyticsEvents = [...(metadata.analyticsEvents || []), ...(this.pending.metadata?.analyticsEvents || [])];
           if (error?.status === 409) {
             this.onStatus('conflict');
             this.onConflict(error, snapshot);

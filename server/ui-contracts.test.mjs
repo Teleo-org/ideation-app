@@ -7,6 +7,7 @@ const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const shared = readFileSync(new URL('../public/share.js', import.meta.url), 'utf8');
 const controls = readFileSync(new URL('../public/board-controls.mjs', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+const posthog = readFileSync(new URL('../public/posthog.mjs', import.meta.url), 'utf8');
 
 test('main board exposes shared sort controls and a dedicated display settings gear', () => {
   const sortIndex = controls.indexOf('idea-sort');
@@ -45,6 +46,21 @@ test('Clerk bootstrap has a visible loading state, timeout, retry, and first-par
   assert.match(app, /clerkStatus === 'error'/);
   assert.match(app, /Retrying sign-in/);
   assert.match(app, /try \{\s*await continueAsGuest\(\);\s*await initializeClerk\(\);/);
+});
+
+test('analytics is opt-in, self-hosted-safe, and explicit-only', () => {
+  assert.match(app, /ANALYTICS_CONSENT_KEY/);
+  assert.match(app, /data-action="open-analytics-privacy"/);
+  assert.match(app, /if \(selfHosted\) return showToast\('Analytics is unavailable/);
+  assert.match(app, /import\('\/posthog\.mjs'\)/);
+  assert.doesNotMatch(app, /posthogReady/);
+  assert.match(posthog, /autocapture: false/);
+  assert.match(posthog, /capture_pageview: false/);
+  assert.match(posthog, /capture_pageleave: false/);
+  assert.match(posthog, /disable_session_recording: true/);
+  assert.doesNotMatch(posthog, /email/);
+  assert.match(app, /recordPersistedEvent\('idea_created'/);
+  assert.match(app, /decision_lock_update_attempted/);
 });
 
 test('private client shell contains every startup control host used by app bootstrap', () => {
